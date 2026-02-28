@@ -1,0 +1,130 @@
+# =====================================================
+# FoundersHQ Monorepo .gitignore
+# Covers:
+# - Next.js frontend
+# - FastAPI backend
+# - Python virtualenvs
+# - Node tooling
+# - Docker + OS artifacts
+# =====================================================
+
+############################
+# OS / Editor Files
+############################
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.log
+*.tmp
+*.temp
+.vscode/
+.idea/
+*.code-workspace
+
+############################
+# Environment Variables
+############################
+.env
+.env.*
+!.env.example
+
+############################
+# Node / Frontend (Next.js)
+############################
+node_modules/
+.pnpm-store/
+.npm/
+.yarn/
+.yarn-cache/
+.yarnrc.yml
+
+# Next.js build output
+.next/
+out/
+dist/
+build/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# TypeScript
+*.tsbuildinfo
+
+############################
+# Python / Backend (FastAPI)
+############################
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python packaging
+*.egg-info/
+.eggs/
+build/
+dist/
+pip-wheel-metadata/
+
+# Pytest / coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+############################
+# Celery / Worker Artifacts
+############################
+celerybeat-schedule
+celerybeat.pid
+
+############################
+# Database / Local Storage
+############################
+*.sqlite3
+*.db
+
+############################
+# Alembic (optional ignores)
+############################
+alembic/versions/*.pyc
+
+############################
+# Docker
+############################
+docker-data/
+*.pid
+
+############################
+# Uploaded / Generated Files
+############################
+uploads/
+tmp/
+temp/
+media/
+storage/
+
+############################
+# Logs
+############################
+logs/
+*.log
+
+############################
+# Generated API Contracts (optional)
+############################
+shared/openapi/*.json
+
+############################
+# Misc
+############################
+.cache/
+coverage/
