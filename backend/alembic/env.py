@@ -2,7 +2,7 @@
 import asyncio
 from logging.config import fileConfig
 
-from sqlalchemy import pool
+from sqlalchemy import create_engine, pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
@@ -47,7 +47,7 @@ def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
     connectable = context.config.attributes.get("connection", None)
     if connectable is None:
-        connectable = pool.create_engine(
+        connectable = create_engine(
             config.get_main_option("sqlalchemy.url"),
             poolclass=pool.NullPool,
         )

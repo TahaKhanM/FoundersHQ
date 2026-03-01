@@ -18,6 +18,11 @@ services:
     volumes:
       - .:/app
 
+  backend:
+    build: ./backend
+    env_file:
+      - ./backend/.env
+
   db:
     image: postgres:15-alpine
     environment:

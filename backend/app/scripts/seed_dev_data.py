@@ -1,4 +1,12 @@
 """Seed dev/demo data for one org. Can be run from API (POST /ingest/sample-seed) or CLI."""
+import sys
+from pathlib import Path
+
+# When run as script (e.g. python app/scripts/seed_dev_data.py), ensure backend root is on path
+_backend_root = Path(__file__).resolve().parent.parent.parent
+if _backend_root.name == "backend" and str(_backend_root) not in sys.path:
+    sys.path.insert(0, str(_backend_root))
+
 from datetime import date, timedelta
 from decimal import Decimal
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -91,3 +99,63 @@ async def seed_org(session: AsyncSession, org_id: str) -> None:
             parse_confidence=0.9,
         ))
     await session.commit()
+
+
+if __name__ == "__main__":
+    import asyncio
+    from app.config import get_settings
+    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+    from sqlalchemy import select
+    from app.models import user, org  # user first so Membership->User relationship resolves
+    from sqlalchemy.exc import OperationalError
+
+    def main():
+        settings = get_settings()
+        engine = create_async_engine(settings.database_url)
+        async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+        async def _run():
+            async with async_session() as session:
+                result = await session.execute(select(org.Org).limit(1))
+                o = result.scalar_one_or_none()
+                if not o:
+                    # Create a default dev user + org so seed can run without registering first
+                    from app.models.user import User
+                    from app.models.org import Membership
+                    from app.utils.hashing import hash_password
+                    dev_user = User(
+                        id=gen_uuid(),
+                        email="dev@foundershq.local",
+                        password_hash=hash_password("devpassword"),
+                    )
+                    session.add(dev_user)
+                    await session.flush()
+                    dev_org = org.Org(
+                        id=gen_uuid(),
+                        name="Dev Org",
+                    )
+                    session.add(dev_org)
+                    await session.flush()
+                    session.add(Membership(
+                        id=gen_uuid(),
+                        user_id=dev_user.id,
+                        org_id=dev_org.id,
+                        role="owner",
+                    ))
+                    await session.commit()
+                    o = dev_org
+                    print("Created dev user (dev@foundershq.local / devpassword) and org.")
+                await seed_org(session, o.id)
+                print(f"Seeded org {o.id}")
+
+        try:
+            asyncio.run(_run())
+        except OperationalError as e:
+            print("Database connection failed. Ensure Postgres is running and reachable.")
+            print("  - If using Docker: run the seed inside the container:")
+            print("    docker compose exec api python app/scripts/seed_dev_data.py")
+            print("  - If running locally: set DATABASE_URL in .env to use localhost, e.g.")
+            print("    DATABASE_URL=postgresql+asyncpg://foundershq:foundershq@localhost:5432/foundershq")
+            raise SystemExit(1) from e
+
+    main()

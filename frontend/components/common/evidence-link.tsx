@@ -45,7 +45,7 @@ export function EvidenceChips({
   )
 }
 
-/** Parse text and replace txn_*/inv_* tokens with clickable chips */
+/** Parse text and replace txn_* and inv_* tokens with clickable chips */
 export function renderTextWithEvidence(
   text: string,
   onClickId?: (id: string) => void
