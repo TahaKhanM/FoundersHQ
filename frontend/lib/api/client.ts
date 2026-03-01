@@ -1,0 +1,54 @@
+/** Base URL of the FastAPI backend. */
+export const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
+
+/** When true, hooks use mock data. Defaults to true unless NEXT_PUBLIC_MOCK_API is explicitly "false". */
+export const IS_MOCK = process.env.NEXT_PUBLIC_MOCK_API !== "false"
+
+import { getAccessToken } from "./auth"
+
+export class ApiError extends Error {
+  status: number
+  requestId?: string
+  constructor(message: string, status: number, requestId?: string) {
+    super(message)
+    this.status = status
+    this.requestId = requestId
+  }
+}
+
+export async function apiFetch<T>(
+  path: string,
+  options: RequestInit = {}
+): Promise<T> {
+  if (IS_MOCK) {
+    throw new Error("apiFetch should not be called in mock mode")
+  }
+
+  const token = getAccessToken()
+  const url = path.startsWith("http") ? path : `${API_BASE_URL}${path}`
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options.headers,
+    },
+    credentials: "include",
+  })
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new ApiError(
+      body.message ?? res.statusText,
+      res.status,
+      body.requestId
+    )
+  }
+
+  return res.json()
+}
+
+export function isMockMode(): boolean {
+  return IS_MOCK
+}
