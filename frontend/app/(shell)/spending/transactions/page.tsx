@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -16,8 +16,11 @@ import { RecordSheet } from "@/components/common/record-sheet"
 import { useTransactions, useCategories, useUpdateTransactionCategory, useCreateRule } from "@/lib/api/hooks"
 import { formatCurrency, formatDate } from "@/lib/utils/format"
 import { Search, ChevronLeft, ChevronRight, Plus } from "lucide-react"
+import { useSearchParams } from "next/navigation"
 
 export default function TransactionsPage() {
+  const searchParams = useSearchParams()
+  const openTxnId = searchParams.get("openTxnId")
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState("")
   const [categoryFilter, setCategoryFilter] = useState<string>("")
@@ -32,6 +35,10 @@ export default function TransactionsPage() {
   const { data: categories } = useCategories()
   const { trigger: updateCategory } = useUpdateTransactionCategory()
   const { trigger: createRule } = useCreateRule()
+
+  useEffect(() => {
+    if (openTxnId) setSheetId(openTxnId)
+  }, [openTxnId])
 
   async function handleCategoryChange(txnId: string, categoryId: string) {
     setEditingTxn(txnId)
@@ -220,7 +227,7 @@ export default function TransactionsPage() {
         </DialogContent>
       </Dialog>
 
-      <RecordSheet open={!!sheetId} onOpenChange={() => setSheetId(null)} evidenceId={sheetId} />
+      <RecordSheet open={!!sheetId} onOpenChange={() => setSheetId(null)} evidenceId={sheetId} recordType="transaction" />
     </>
   )
 }

@@ -12,6 +12,8 @@ from app.services.spending.metrics import (
     buffer_ratio,
     revenue_breakeven_gap,
     compute_baseline_weekly_outflow,
+    compute_weekly_outflows_by_week,
+    reconcile_weekly_to_period,
 )
 
 
@@ -66,3 +68,24 @@ def test_revenue_breakeven_gap():
 def test_compute_baseline_weekly_outflow():
     weekly = [Decimal("100"), Decimal("200"), Decimal("300")]
     assert compute_baseline_weekly_outflow(weekly, exclude_last_n=1) == Decimal("150")  # mean of 100, 200
+
+
+def test_weekly_series_reconciles_to_period_total():
+    """Weekly outflow series sums must equal period outflow total (deterministic)."""
+    from datetime import date
+    # Same week: one outflow
+    rows = [(date(2025, 1, 15), Decimal("-100"))]
+    by_week = compute_weekly_outflows_by_week(rows, date(2025, 2, 1), 9)
+    period_total = total_outflow([r[1] for r in rows])
+    series = list(by_week.items())
+    mismatch, sum_weekly = reconcile_weekly_to_period(series, period_total)
+    assert not mismatch
+    assert sum_weekly == period_total == Decimal("100")
+    # Two weeks
+    rows2 = [(date(2025, 1, 8), Decimal("-50")), (date(2025, 1, 15), Decimal("-50"))]
+    by_week2 = compute_weekly_outflows_by_week(rows2, date(2025, 2, 1), 9)
+    period_total2 = total_outflow([r[1] for r in rows2])
+    series2 = list(by_week2.items())
+    mismatch2, sum_weekly2 = reconcile_weekly_to_period(series2, period_total2)
+    assert not mismatch2
+    assert sum_weekly2 == period_total2 == Decimal("100")

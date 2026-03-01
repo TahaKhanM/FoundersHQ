@@ -3,12 +3,10 @@
 import { useState } from "react"
 import Link from "next/link"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Skeleton } from "@/components/ui/skeleton"
 import { MetricCard } from "@/components/common/metric-card"
 import { AlertList } from "@/components/common/alert-list"
 import { RecordSheet } from "@/components/common/record-sheet"
-import { PageHeader } from "@/components/common/page-header"
 import { useInvoiceMetrics, useAlerts, useCustomers } from "@/lib/api/hooks"
 import { formatCurrency } from "@/lib/utils/format"
 import {
@@ -43,19 +41,8 @@ export default function InvoicesPage() {
 
   return (
     <>
-      <PageHeader title="Invoice Control Tower" description="Track receivables, predict payments, and manage collections" />
-
-      <Tabs defaultValue="overview">
-        <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="list" asChild><Link href="/invoices/list">Invoices</Link></TabsTrigger>
-          <TabsTrigger value="customers" asChild><Link href="/invoices/customers">Customers</Link></TabsTrigger>
-          <TabsTrigger value="actions" asChild><Link href="/invoices/actions">Action Queue</Link></TabsTrigger>
-          <TabsTrigger value="imports" asChild><Link href="/invoices/imports">Imports</Link></TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="overview" className="mt-4 space-y-6">
-          {isLoading ? (
+      <div className="space-y-6">
+        {isLoading ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {Array.from({ length: 5 }).map((_, i) => (
                 <Skeleton key={i} className="h-24 rounded-lg" />
@@ -72,7 +59,6 @@ export default function InvoicesPage() {
           ) : null}
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            {/* Ageing Buckets */}
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium">Ageing Buckets</CardTitle>
@@ -81,13 +67,13 @@ export default function InvoicesPage() {
                 <ResponsiveContainer width="100%" height={220}>
                   <BarChart data={ageingData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis dataKey="bucket" fontSize={12} />
-                    <YAxis tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} fontSize={12} />
+                    <XAxis dataKey="bucket" fontSize={12} tick={{ fill: "hsl(var(--foreground))" }} />
+                    <YAxis tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} fontSize={12} tick={{ fill: "hsl(var(--foreground))" }} />
                     <Tooltip
                       formatter={(value: number) => [formatCurrency(value), "Amount"]}
                       contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
                     />
-                    <Bar dataKey="amount" fill="hsl(var(--chart-3))" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="amount" fill="hsl(var(--chart-3))" radius={[4, 4, 0, 0]} stroke="none" />
                   </BarChart>
                 </ResponsiveContainer>
               </CardContent>
@@ -136,8 +122,7 @@ export default function InvoicesPage() {
               />
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+      </div>
 
       <RecordSheet open={!!sheetId} onOpenChange={() => setSheetId(null)} evidenceId={sheetId} />
     </>

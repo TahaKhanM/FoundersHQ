@@ -1,6 +1,7 @@
 """LLM explain: call external LLM with guardrails. Optional OpenAI."""
 from typing import Any
 import re
+from app.config import get_settings
 from app.services.llm.guardrails import (
     validate_llm_response,
     GUARDRAIL_PROMPT_INSTRUCTIONS,
@@ -35,7 +36,8 @@ async def call_llm_explain(
     except Exception:
         answer = "Unable to generate explanation at this time."
     valid, disclaimers, err = validate_llm_response(
-        answer, facts_payload, allowed_evidence_ids, reject_on_unknown_numbers=False
+        answer, facts_payload, allowed_evidence_ids,
+        reject_on_unknown_numbers=get_settings().llm_guardrail_reject_on_unknown_numbers,
     )
     if not valid and err:
         answer = "I can only explain using the provided facts. Please rephrase or narrow your question."

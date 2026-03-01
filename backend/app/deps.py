@@ -66,7 +66,30 @@ async def get_current_org(
     return org
 
 
+async def get_current_user_optional(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security)],
+    session: Annotated[AsyncSession, Depends(get_async_session)],
+) -> User | None:
+    """Return current user if valid token present, else None."""
+    if not credentials:
+        return None
+    try:
+        payload = jwt.decode(
+            credentials.credentials,
+            get_settings().secret_key,
+            algorithms=[get_settings().algorithm],
+        )
+        user_id = payload.get("sub")
+        if user_id is None:
+            return None
+    except JWTError:
+        return None
+    result = await session.execute(select(User).where(User.id == UUID(user_id)))
+    return result.scalar_one_or_none()
+
+
 # Type aliases for route injection
 CurrentUser = Annotated[User, Depends(get_current_user)]
+CurrentUserOptional = Annotated[User | None, Depends(get_current_user_optional)]
 CurrentOrg = Annotated[Org, Depends(get_current_org)]
 DbSession = Annotated[AsyncSession, Depends(get_async_session)]

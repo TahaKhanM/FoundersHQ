@@ -111,6 +111,15 @@ class SpendingMetricsDTO(BaseModel):
     revenue_breakeven_gap: Decimal | None = None
     currency: str = "USD"
     multi_currency_warning: bool = False
+    reconciliation: SpendingReconciliationDTO | None = None
+
+
+class SpendingReconciliationDTO(BaseModel):
+    weekly_outflow_series: list[dict]  # [{week_start, total_outflow}]
+    period_outflow_total: Decimal
+    sum_of_weekly_totals: Decimal
+    mismatch: bool
+    mismatch_note: str | None = None
 
 
 class TransactionDTO(BaseModel):
@@ -194,6 +203,8 @@ class AlertDTO(BaseModel):
     message: str
     severity: str  # info | warning | critical
     evidence_ids: list[str] = []
+    next_step_title: str | None = None
+    deep_link: str | None = None
     created_at: datetime | None = None
 
 
@@ -272,6 +283,10 @@ class ActionQueueItemDTO(BaseModel):
     priority_score: float
     suggested_action: str
     evidence_ids: list[str] = []
+    reasons: list[str] = []
+    last_touched_at: datetime | None = None
+    last_touch_type: str | None = None
+    is_completed: bool = False
 
 
 class TouchLogDTO(BaseModel):
@@ -280,6 +295,7 @@ class TouchLogDTO(BaseModel):
     channel: str
     touch_type: str
     notes: str | None
+    user_id: str | None = None
     created_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -443,6 +459,63 @@ class ImprovementItemDTO(BaseModel):
     description: str
     target_evidence_ids: list[str]
     priority: float
+
+
+# ---- Search (deterministic global search) ----
+class SearchResultDTO(BaseModel):
+    type: str  # transaction | invoice | customer | commitment | funding_opportunity | page
+    id: str
+    title: str
+    subtitle: str | None = None
+    snippet: str | None = None
+    deep_link: str
+    open_param: str | None = None
+    score: float
+    match_reason: str  # exact_id | text_match | status | recency | type_hint
+
+
+# ---- Notifications ----
+class NotificationDTO(BaseModel):
+    id: str
+    org_id: str
+    type: str
+    severity: str
+    title: str
+    message: str
+    evidence_ids: list[str] | None = None
+    deep_link: str | None = None
+    created_at: datetime | None = None
+    read_at: datetime | None = None
+    archived_at: datetime | None = None
+    dedupe_key: str | None = None
+    source: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ---- Dashboard / Health score ----
+class DashboardMetricsDTO(BaseModel):
+    """Aggregated metrics for dashboard overview."""
+    cash_weeks: float
+    net_burn_30d: Decimal
+    total_outflow_30d: Decimal
+    spend_creep_status: str  # rising | stable | declining
+    overdue_ratio: float
+    runway_base: float
+    runway_pess: float
+
+
+class HealthScoreBreakdownItem(BaseModel):
+    key: str
+    label: str
+    value: float
+    weightPct: float
+
+
+class HealthScoreResponse(BaseModel):
+    score: float
+    breakdown: list[HealthScoreBreakdownItem]
+    notes: list[str] = []
 
 
 # ---- LLM ----

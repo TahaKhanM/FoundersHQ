@@ -11,6 +11,7 @@ from app.api.schemas import (
     PaginatedResponse,
 )
 from app.deps import CurrentOrg, DbSession, CurrentUser
+from app.models import funding as fund_models
 from app.services.funding.scoring import score_route
 from app.services.funding.timeline import timeline_sort_key, rationale_for_item
 from app.services.funding.improvements import improvement_items

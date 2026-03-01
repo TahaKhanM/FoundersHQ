@@ -61,6 +61,13 @@ export interface SpendingMetricsDTO {
   bufferRatio: number
   revenueBreakevenGap: number
   updatedAt: string
+  reconciliation?: {
+    weekly_outflow_series: Array<{ week_start?: string; total_outflow: number }>
+    period_outflow_total: number
+    sum_of_weekly_totals: number
+    mismatch: boolean
+    mismatch_note?: string | null
+  }
 }
 
 export interface AlertDTO {
@@ -69,7 +76,10 @@ export interface AlertDTO {
   severity: "critical" | "warning" | "info"
   title: string
   description: string
+  message?: string
   evidenceIds: string[]
+  nextStepTitle?: string | null
+  deepLink?: string | null
 }
 
 // =============================================
@@ -107,12 +117,19 @@ export interface ActionQueueItemDTO {
   actionId: string
   invoiceId: string
   customerId: string
+  customerName?: string
   actionType: "reminder" | "call" | "escalation"
   dueAt: string
+  dueDate?: string
   priorityScore: number
   reasons: string[]
   template?: string
   evidenceIds: string[]
+  lastTouchedAt?: string | null
+  lastTouchType?: string | null
+  isCompleted?: boolean
+  amount?: number
+  daysOverdue?: number
 }
 
 export interface TouchLogDTO {
@@ -238,6 +255,21 @@ export interface LLMExplainResponseDTO {
   citations: { evidenceIds: string[]; note?: string }[]
   confidence: "high" | "medium" | "low"
   disclaimers: string[]
+}
+
+// =============================================
+// Search (global search from backend)
+// =============================================
+export interface SearchResultDTO {
+  type: string
+  id: string
+  title: string
+  subtitle?: string | null
+  snippet?: string | null
+  deep_link: string
+  open_param?: string | null
+  score: number
+  match_reason: string
 }
 
 // =============================================

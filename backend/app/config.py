@@ -1,10 +1,12 @@
 """Application configuration from environment."""
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
 
 class Settings(BaseSettings):
     """App settings; load from env."""
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # App
     app_name: str = "FoundersHQ"
@@ -36,9 +38,8 @@ class Settings(BaseSettings):
     # Spend creep alert
     spend_creep_alert_threshold: float = 0.25
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    # Action queue: invoice considered "touched" (completed) if last touch within N days
+    action_queue_completion_days: int = 7
 
 
 @lru_cache

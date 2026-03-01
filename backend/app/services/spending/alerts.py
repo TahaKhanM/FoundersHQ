@@ -24,4 +24,6 @@ def spend_creep_alerts(
         "message": f"Current week outflow is {spend_creep_pct:.0%} above baseline.",
         "severity": "warning",
         "evidence_ids": evidence_ids or [],
+        "next_step_title": "Review spending",
+        "deep_link": "/spending",
     }]

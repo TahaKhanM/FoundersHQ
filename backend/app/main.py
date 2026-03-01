@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.api.routers import auth, org, ingest, spending, invoices, runway, funding, llm, customers, integrations
+from app.api.routers import auth, org, ingest, spending, invoices, runway, funding, llm, customers, integrations, search, notifications, dashboard
 
 settings = get_settings()
 
@@ -43,6 +43,9 @@ app.include_router(funding.router, prefix="/funding", tags=["funding"])
 app.include_router(llm.router, prefix="/llm", tags=["llm"])
 app.include_router(customers.router, prefix="/customers", tags=["customers"])
 app.include_router(integrations.router, prefix="/integrations", tags=["integrations"])
+app.include_router(search.router, prefix="/search", tags=["search"])
+app.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
+app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 
 
 @app.get("/health")

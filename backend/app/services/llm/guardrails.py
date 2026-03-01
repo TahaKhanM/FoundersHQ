@@ -4,6 +4,36 @@ import json
 import re
 from typing import Any
 
+CAUSAL_PATTERNS = re.compile(
+    r"\b(because|due to|caused by|led to|owing to|as a result of)\b",
+    re.IGNORECASE,
+)
+UUID_RE = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
+
+
+def _has_causal_claim(text: str) -> bool:
+    return bool(CAUSAL_PATTERNS.search(text))
+
+
+def _cited_evidence_ids(text: str) -> set[str]:
+    return set(UUID_RE.findall(text))
+
+
+def validate_causal_claims_require_evidence(
+    response_text: str,
+    allowed_evidence_ids: set[str],
+) -> tuple[bool, str | None]:
+    """If response contains causal language, at least one allowed evidence ID must appear. Returns (valid, error_message)."""
+    if not _has_causal_claim(response_text):
+        return True, None
+    cited = _cited_evidence_ids(response_text)
+    allowed_cited = cited & allowed_evidence_ids
+    if not allowed_cited:
+        return False, "Causal claim requires at least one evidence ID citation from the allowed set"
+    return True, None
+
 
 def build_facts_hash(payload: dict[str, Any]) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()[:16]
@@ -46,11 +76,12 @@ def validate_llm_response(
     """
     Returns: (valid, disclaimers, error_message).
     If invalid and reject_on_unknown_numbers: error_message is set.
+    Causal claims require at least one evidence ID in response.
     """
     disclaimers = []
+    # Numbers: only those in facts
     nums_in_response = extract_numbers_from_text(response_text)
     nums_in_facts = numbers_in_facts_payload(facts_payload)
-    # Allow numbers that appear in facts (exact or normalized)
     for n in list(nums_in_response):
         if n in nums_in_facts:
             continue
@@ -58,11 +89,12 @@ def validate_llm_response(
             continue
         if reject_on_unknown_numbers:
             return False, [], f"LLM response contains number '{n}' not present in facts payload"
-    # Extract cited IDs (UUIDs mentioned in response)
-    uuid_re = re.compile(
-        r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
-    )
-    cited = set(uuid_re.findall(response_text))
+    # Causal claims must cite evidence
+    causal_ok, causal_err = validate_causal_claims_require_evidence(response_text, allowed_evidence_ids)
+    if not causal_ok and causal_err:
+        return False, [], causal_err
+    # Citations subset of allowed
+    cited = set(UUID_RE.findall(response_text))
     if cited and not cited.issubset(allowed_evidence_ids):
         disclaimers.append("Some citations may reference IDs not in allowed evidence set")
     return True, disclaimers, None

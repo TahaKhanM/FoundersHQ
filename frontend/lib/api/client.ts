@@ -1,5 +1,9 @@
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
-const IS_MOCK = process.env.NEXT_PUBLIC_MOCK_API === "true"
+
+/** When true, hooks use mock data. Defaults to true unless NEXT_PUBLIC_MOCK_API is explicitly "false". */
+export const IS_MOCK = process.env.NEXT_PUBLIC_MOCK_API !== "false"
+
+import { getAccessToken } from "./auth"
 
 export class ApiError extends Error {
   status: number
@@ -19,11 +23,13 @@ export async function apiFetch<T>(
     throw new Error("apiFetch should not be called in mock mode")
   }
 
-  const url = `${BASE_URL}${path}`
+  const token = getAccessToken()
+  const url = path.startsWith("http") ? path : `${BASE_URL}${path}`
   const res = await fetch(url, {
     ...options,
     headers: {
       "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options.headers,
     },
     credentials: "include",

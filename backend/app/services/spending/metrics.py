@@ -95,6 +95,17 @@ def compute_weekly_outflows_by_week(
     return dict(outflows_by_week)
 
 
+def reconcile_weekly_to_period(
+    weekly_outflow_series: list[tuple[date, Decimal]],
+    period_outflow_total: Decimal,
+    epsilon: Decimal = Decimal("0.01"),
+) -> tuple[bool, Decimal]:
+    """Return (mismatch, sum_of_weekly_totals). Mismatch if |sum_weekly - period| > epsilon."""
+    sum_weekly = sum(w[1] for w in weekly_outflow_series)
+    mismatch = abs(sum_weekly - period_outflow_total) > epsilon
+    return mismatch, sum_weekly
+
+
 def vendor_anomaly_mad(weekly_spend_by_merchant: dict[str, list[Decimal]]) -> dict[str, bool]:
     """Simple MAD-based anomaly: True if merchant's last week is outlier. Placeholder returns {}."""
     # MVP: could compute median and MAD per merchant, flag if last > median + k*MAD

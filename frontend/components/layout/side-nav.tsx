@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import {
@@ -41,8 +42,10 @@ export function SideNav() {
       <div className="flex items-center gap-2 border-b border-sidebar-border px-4 py-4">
         {!collapsed && (
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-              <span className="text-sm font-bold text-primary-foreground">F</span>
+            <div className="h-8 w-8 shrink-0 overflow-hidden rounded-lg">
+              <div className="h-full w-full origin-center scale-150">
+                <Image src="/logo.png" alt="FoundersHQ" width={32} height={32} className="h-full w-full object-cover object-center" />
+              </div>
             </div>
             <span className="text-lg font-semibold text-sidebar-foreground tracking-tight">
               FoundersHQ
@@ -50,9 +53,13 @@ export function SideNav() {
           </Link>
         )}
         {collapsed && (
-          <div className="mx-auto flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-            <span className="text-sm font-bold text-primary-foreground">F</span>
-          </div>
+          <Link href="/dashboard" className="mx-auto block w-8">
+            <div className="h-8 w-8 overflow-hidden rounded-lg">
+              <div className="h-full w-full origin-center scale-150">
+                <Image src="/logo.png" alt="FoundersHQ" width={32} height={32} className="h-full w-full object-cover object-center" />
+              </div>
+            </div>
+          </Link>
         )}
       </div>
 

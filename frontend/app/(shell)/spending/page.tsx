@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -47,10 +48,16 @@ const weeklyTrend = [
 ]
 
 export default function SpendingPage() {
+  const pathname = usePathname()
+  const tabFromRoute = pathname === "/spending/transactions" ? "transactions" : pathname === "/spending/commitments" ? "commitments" : pathname === "/spending/rules" ? "rules" : "overview"
   const { data: metrics, isLoading } = useSpendingMetrics()
   const { data: alerts } = useAlerts()
   const { data: txnData } = useTransactions({ pageSize: 5 })
   const [sheetId, setSheetId] = useState<string | null>(null)
+  const weeklyTrendFromMetrics = metrics?.reconciliation?.weekly_outflow_series
+  const weeklyTrend = weeklyTrendFromMetrics?.length
+    ? weeklyTrendFromMetrics.map((w, i) => ({ week: `W${i + 1}`, outflow: Number(w.total_outflow) }))
+    : []
 
   return (
     <>
@@ -67,9 +74,9 @@ export default function SpendingPage() {
         }
       />
 
-      <Tabs defaultValue="overview">
-        <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
+      <Tabs value={tabFromRoute} className="w-full">
+        <TabsList className="w-full justify-start flex flex-wrap h-auto gap-1">
+          <TabsTrigger value="overview" asChild><Link href="/spending">Overview</Link></TabsTrigger>
           <TabsTrigger value="transactions" asChild>
             <Link href="/spending/transactions">Transactions</Link>
           </TabsTrigger>
@@ -128,18 +135,22 @@ export default function SpendingPage() {
                 <CardTitle className="text-sm font-medium">Weekly Outflow Trend</CardTitle>
               </CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={260}>
-                  <LineChart data={weeklyTrend}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis dataKey="week" fontSize={12} />
-                    <YAxis tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} fontSize={12} />
-                    <Tooltip
-                      formatter={(value: number) => [`$${value.toLocaleString()}`, "Outflow"]}
-                      contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
-                    />
-                    <Line type="monotone" dataKey="outflow" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 4 }} />
-                  </LineChart>
-                </ResponsiveContainer>
+                {weeklyTrend.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={260}>
+                    <LineChart data={weeklyTrend}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                      <XAxis dataKey="week" fontSize={12} />
+                      <YAxis tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} fontSize={12} />
+                      <Tooltip
+                        formatter={(value: number) => [`$${value.toLocaleString()}`, "Outflow"]}
+                        contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+                      />
+                      <Line type="monotone" dataKey="outflow" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 4 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <p className="text-sm text-muted-foreground py-8 text-center">No data for selected period.</p>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -151,7 +162,11 @@ export default function SpendingPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {txnData?.data.filter((t) => t.amount < 0).slice(0, 5).map((txn) => (
+                {(txnData?.data ?? [])
+                  .filter((t) => t.amount < 0)
+                  .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
+                  .slice(0, 5)
+                  .map((txn) => (
                   <div key={txn.txnId} className="flex items-center justify-between">
                     <div>
                       <p className="text-sm font-medium text-foreground">{txn.canonicalMerchant}</p>

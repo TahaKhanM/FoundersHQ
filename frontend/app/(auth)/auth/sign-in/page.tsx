@@ -22,12 +22,26 @@ export default function SignInPage() {
     setLoading(true)
     setError("")
 
-    // TODO: Replace with real POST /auth/login
-    await new Promise((r) => setTimeout(r, 800))
-    if (email && password) {
+    try {
+      const base = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
+      const res = await fetch(`${base}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(data.detail ?? "Invalid email or password.")
+        setLoading(false)
+        return
+      }
+      if (data.access_token) {
+        const { setAccessToken } = await import("@/lib/api/auth")
+        setAccessToken(data.access_token)
+      }
       router.push("/onboarding")
-    } else {
-      setError("Please enter email and password.")
+    } catch {
+      setError("Something went wrong. Try again.")
     }
     setLoading(false)
   }

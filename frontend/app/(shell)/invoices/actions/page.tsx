@@ -20,7 +20,8 @@ import { PageHeader } from "@/components/common/page-header"
 import { useActionQueue, useLogTouch } from "@/lib/api/hooks"
 import { formatDate } from "@/lib/utils/format"
 import { cn } from "@/lib/utils"
-import { Phone, Mail, AlertTriangle, ChevronRight, MessageSquare, CheckCircle2 } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
+import { Phone, Mail, AlertTriangle, ChevronRight, MessageSquare, CheckCircle2, Copy } from "lucide-react"
 
 const actionIcons: Record<string, React.ReactNode> = {
   reminder: <Mail className="h-4 w-4" />,
@@ -35,22 +36,54 @@ const actionColors: Record<string, string> = {
 }
 
 export default function ActionsPage() {
-  const { data: actions, isLoading } = useActionQueue()
+  const { data: actions, isLoading, mutate } = useActionQueue()
   const { trigger: logTouch, isMutating } = useLogTouch()
+  const { toast } = useToast()
   const [selectedAction, setSelectedAction] = useState<string | null>(null)
   const [touchChannel, setTouchChannel] = useState("email")
   const [touchNotes, setTouchNotes] = useState("")
-  const [completed, setCompleted] = useState<Set<string>>(new Set())
+  const [filterOverdueOnly, setFilterOverdueOnly] = useState(false)
+  const [filterNoTouch7d, setFilterNoTouch7d] = useState(false)
+  const [filterHighAmount, setFilterHighAmount] = useState(false)
 
-  const sorted = actions?.slice().sort((a, b) => b.priorityScore - a.priorityScore)
+  const sorted = actions?.slice().sort((a, b) => b.priorityScore - a.priorityScore) ?? []
+  const filtered = sorted.filter((a) => {
+    if (filterOverdueOnly && (a.daysOverdue ?? 0) <= 0) return false
+    if (filterNoTouch7d) {
+      const touched = a.lastTouchedAt ? new Date(a.lastTouchedAt).getTime() : 0
+      const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+      if (touched >= sevenDaysAgo) return false
+    }
+    if (filterHighAmount && (a.amount ?? 0) < 10000) return false
+    return true
+  })
   const activeAction = sorted?.find((a) => a.actionId === selectedAction)
+
+  const touchTypeFromAction = (actionType: string) =>
+    actionType === "reminder" ? "reminder" : actionType === "escalation" || actionType === "call" ? "escalation" : "reminder"
 
   async function handleLogTouch() {
     if (!activeAction) return
-    await logTouch({ invoiceId: activeAction.invoiceId, channel: touchChannel, notes: touchNotes || undefined })
-    setCompleted((prev) => new Set([...prev, activeAction.actionId]))
-    setSelectedAction(null)
-    setTouchNotes("")
+    try {
+      await logTouch({
+        invoiceId: activeAction.invoiceId,
+        channel: touchChannel,
+        touchType: touchTypeFromAction(activeAction.actionType),
+        notes: touchNotes || undefined,
+      })
+      await mutate()
+      toast({ title: "Touch logged", description: "Action queue updated." })
+      setSelectedAction(null)
+      setTouchNotes("")
+    } catch (e) {
+      toast({ title: "Error", description: e instanceof Error ? e.message : "Failed to log touch", variant: "destructive" })
+    }
+  }
+
+  function handleCopyTemplate() {
+    if (!activeAction?.template) return
+    void navigator.clipboard.writeText(activeAction.template)
+    toast({ title: "Copied", description: "Template copied to clipboard." })
   }
 
   return (
@@ -61,19 +94,31 @@ export default function ActionsPage() {
         </Link>
       </PageHeader>
 
+      <div className="flex flex-wrap gap-2 mb-4">
+        <Button variant={filterOverdueOnly ? "secondary" : "outline"} size="sm" onClick={() => setFilterOverdueOnly((v) => !v)}>
+          Overdue only
+        </Button>
+        <Button variant={filterNoTouch7d ? "secondary" : "outline"} size="sm" onClick={() => setFilterNoTouch7d((v) => !v)}>
+          No touch in 7 days
+        </Button>
+        <Button variant={filterHighAmount ? "secondary" : "outline"} size="sm" onClick={() => setFilterHighAmount((v) => !v)}>
+          High amount (≥$10k)
+        </Button>
+      </div>
+
       <div className="space-y-3">
         {isLoading ? (
           Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-28 rounded-lg" />
           ))
-        ) : sorted?.map((action) => {
-          const isDone = completed.has(action.actionId)
+        ) : filtered.map((action) => {
+          const isDone = action.isCompleted === true
           return (
             <Card
               key={action.actionId}
               className={cn(
                 "transition-all",
-                isDone && "opacity-50",
+                isDone && "opacity-60",
                 !isDone && "hover:shadow-md hover:border-primary/20 cursor-pointer"
               )}
               onClick={() => !isDone && setSelectedAction(action.actionId)}
@@ -87,13 +132,19 @@ export default function ActionsPage() {
                     <Badge variant="outline" className={cn("text-xs capitalize", actionColors[action.actionType])}>
                       {action.actionType}
                     </Badge>
-                    <span className="text-xs text-muted-foreground">Due: {formatDate(action.dueAt)}</span>
+                    <span className="text-xs text-muted-foreground">Due: {formatDate(action.dueAt ?? action.dueDate ?? "")}</span>
+                    {action.lastTouchedAt && (
+                      <span className="text-xs text-muted-foreground">
+                        Last touch: {formatDate(action.lastTouchedAt)}
+                        {action.lastTouchType && ` (${action.lastTouchType})`}
+                      </span>
+                    )}
                     <span className="text-xs font-medium text-foreground ml-auto">
                       Priority: {action.priorityScore}
                     </span>
                   </div>
                   <p className="text-sm font-medium text-foreground mt-1">
-                    {action.invoiceId.replace("inv_", "INV-")} - {action.customerId.replace("cust_", "Customer ")}
+                    {action.invoiceId.replace("inv_", "INV-")} - {action.customerName ?? action.customerId?.replace("cust_", "Customer ") ?? "—"}
                   </p>
                   <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                     {action.reasons.map((r, i) => (
@@ -124,10 +175,13 @@ export default function ActionsPage() {
 
           {activeAction?.template && (
             <Card className="bg-muted/50">
-              <CardHeader className="pb-1 pt-3 px-4">
+              <CardHeader className="pb-1 pt-3 px-4 flex flex-row items-center justify-between">
                 <CardTitle className="text-xs font-medium text-muted-foreground flex items-center gap-1">
                   <MessageSquare className="h-3 w-3" /> Template
                 </CardTitle>
+                <Button variant="ghost" size="sm" onClick={handleCopyTemplate}>
+                  <Copy className="h-3 w-3 mr-1" /> Copy
+                </Button>
               </CardHeader>
               <CardContent className="px-4 pb-3">
                 <pre className="text-xs whitespace-pre-wrap font-sans text-foreground leading-relaxed">
@@ -166,7 +220,7 @@ export default function ActionsPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setSelectedAction(null)}>Cancel</Button>
             <Button onClick={handleLogTouch} disabled={isMutating}>
-              {isMutating ? "Logging..." : "Log Touch & Complete"}
+              {isMutating ? "Logging..." : "Log Touch"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,5 +1,5 @@
 """Invoices router: overview, list, detail, customers, action-queue, touches, templates."""
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func
@@ -21,9 +21,11 @@ from app.api.schemas import (
     PaginatedResponse,
     InvoiceParsingConfirmRequest,
 )
-from app.deps import CurrentOrg, DbSession
+from app.deps import CurrentOrg, DbSession, CurrentUserOptional
+from app.config import get_settings
 from app.models import invoice as inv_models
 from app.services.invoices.action_queue import action_queue_item
+from app.services.invoices.risk_scoring import priority_score_components
 from app.utils.pagination import paginate
 
 router = APIRouter()
@@ -92,29 +94,117 @@ async def list_invoices(
 
 @router.get("/action-queue", response_model=list[ActionQueueItemDTO])
 async def get_action_queue(org: CurrentOrg, session: DbSession):
+    settings = get_settings()
+    completion_days = settings.action_queue_completion_days
+    cutoff = datetime.now(timezone.utc) - timedelta(days=completion_days)
+
+    # Invoices open/overdue with customer name; subquery for latest event per invoice
     result = await session.execute(
-        select(inv_models.Invoice, inv_models.Customer.name_raw).join(
+        select(
+            inv_models.Invoice,
+            inv_models.Customer.name_raw,
+        )
+        .join(
             inv_models.Customer,
             inv_models.Invoice.customer_id == inv_models.Customer.id,
-        ).where(
+        )
+        .where(
             inv_models.Invoice.org_id == org.id,
             inv_models.Invoice.status.in_(["open", "overdue"]),
-        ).order_by(inv_models.Invoice.due_date)
+        )
     )
-    items = []
+    rows = result.all()
+    invoice_ids = [inv.id for inv, _ in rows]
+    if not invoice_ids:
+        return []
+
+    # Latest event per invoice: created_at, touch_type
+    events_result = await session.execute(
+        select(
+            inv_models.InvoiceEvent.invoice_id,
+            func.max(inv_models.InvoiceEvent.created_at).label("last_at"),
+        )
+        .where(
+            inv_models.InvoiceEvent.invoice_id.in_(invoice_ids),
+            inv_models.InvoiceEvent.org_id == org.id,
+        )
+        .group_by(inv_models.InvoiceEvent.invoice_id)
+    )
+    last_event_at = {r[0]: r[1] for r in events_result.all()}
+
+    # Latest touch_type per invoice (we need one row per invoice with max created_at)
+    touch_type_by_inv: dict[str, str] = {}
+    for inv_id in invoice_ids:
+        r = await session.execute(
+            select(inv_models.InvoiceEvent.touch_type)
+            .where(
+                inv_models.InvoiceEvent.invoice_id == inv_id,
+                inv_models.InvoiceEvent.org_id == org.id,
+            )
+            .order_by(inv_models.InvoiceEvent.created_at.desc())
+            .limit(1)
+        )
+        row = r.scalar_one_or_none()
+        if row is not None:
+            touch_type_by_inv[inv_id] = row if isinstance(row, str) else row[0]
+
+    # Priority score and reasons from risk_scores if present, else compute
+    risk_result = await session.execute(
+        select(
+            inv_models.InvoiceRiskScore.invoice_id,
+            inv_models.InvoiceRiskScore.priority_score,
+            inv_models.InvoiceRiskScore.reasons,
+        ).where(
+            inv_models.InvoiceRiskScore.invoice_id.in_(invoice_ids),
+            inv_models.InvoiceRiskScore.org_id == org.id,
+        )
+    )
+    risk_rows = risk_result.all()
+    priority_by_inv: dict[str, float] = {}
+    reasons_by_inv: dict[str, list[str]] = {}
+    for inv_id, score, reasons in risk_rows:
+        if inv_id not in priority_by_inv:
+            priority_by_inv[inv_id] = float(score)
+            reasons_by_inv[inv_id] = list(reasons) if isinstance(reasons, list) else []
+
     today = date.today()
-    for inv, cust_name in result.all():
+    items = []
+    for inv, cust_name in rows:
         days_overdue = (today - inv.due_date).days if today > inv.due_date else 0
-        items.append(action_queue_item(
+        last_at = last_event_at.get(inv.id)
+        last_type = touch_type_by_inv.get(inv.id) if last_at else None
+        # completed = touched within N days (and we have a touch)
+        if last_at is None:
+            is_completed = False
+        else:
+            last_utc = last_at if last_at.tzinfo else last_at.replace(tzinfo=timezone.utc)
+            is_completed = last_utc >= cutoff
+        priority = priority_by_inv.get(inv.id)
+        reasons: list[str] = reasons_by_inv.get(inv.id, [])
+        if priority is None:
+            priority, reasons = priority_score_components(
+                inv.amount,
+                inv.status == "overdue",
+                days_overdue,
+            )
+        item = action_queue_item(
             inv.id,
             cust_name or "",
             inv.amount,
             inv.due_date,
             days_overdue,
-            0.5,
+            priority,
             [inv.id],
-        ))
-    return [ActionQueueItemDTO(**x) for x in items]
+            last_touched_at=last_at,
+            last_touch_type=last_type,
+            is_completed=is_completed,
+            reasons=reasons,
+        )
+        items.append(ActionQueueItemDTO(**item))
+
+    # Deterministic ordering by priority_score descending (highest first)
+    items.sort(key=lambda x: (-x.priority_score, x.due_date))
+    return items
 
 
 @router.get("/{invoice_id}", response_model=InvoiceDetailDTO)
@@ -151,8 +241,24 @@ async def get_invoice(invoice_id: str, org: CurrentOrg, session: DbSession):
 
 
 @router.post("/touches", response_model=TouchLogDTO)
-async def create_touch(body: TouchLogCreate, org: CurrentOrg, session: DbSession, user=None):
+async def create_touch(
+    body: TouchLogCreate,
+    org: CurrentOrg,
+    session: DbSession,
+    user: CurrentUserOptional = None,
+):
+    if not body.invoice_id or not body.channel or not body.touch_type:
+        raise HTTPException(400, "invoice_id, channel, and touch_type are required")
+    inv_result = await session.execute(
+        select(inv_models.Invoice).where(
+            inv_models.Invoice.id == body.invoice_id,
+            inv_models.Invoice.org_id == org.id,
+        )
+    )
+    if not inv_result.scalar_one_or_none():
+        raise HTTPException(404, "Invoice not found")
     from app.models.base import gen_uuid
+    user_id = str(user.id) if user else None
     e = inv_models.InvoiceEvent(
         id=gen_uuid(),
         org_id=org.id,
@@ -160,6 +266,7 @@ async def create_touch(body: TouchLogCreate, org: CurrentOrg, session: DbSession
         channel=body.channel,
         touch_type=body.touch_type,
         notes=body.notes,
+        user_id=user_id,
     )
     session.add(e)
     await session.commit()

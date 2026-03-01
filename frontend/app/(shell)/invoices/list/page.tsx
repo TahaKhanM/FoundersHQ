@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,7 @@ import { useInvoices, useCustomers } from "@/lib/api/hooks"
 import { formatCurrency, formatDate } from "@/lib/utils/format"
 import { cn } from "@/lib/utils"
 import { Search, ArrowUpDown, ChevronLeft, ChevronRight } from "lucide-react"
+import { useSearchParams } from "next/navigation"
 
 const statusColors: Record<string, string> = {
   paid: "bg-success/10 text-success border-success/20",
@@ -22,6 +23,8 @@ const statusColors: Record<string, string> = {
 }
 
 export default function InvoiceListPage() {
+  const searchParams = useSearchParams()
+  const openInvoiceId = searchParams.get("openInvoiceId")
   const [statusFilter, setStatusFilter] = useState<string>("")
   const [customerFilter, setCustomerFilter] = useState<string>("")
   const [page, setPage] = useState(1)
@@ -34,6 +37,10 @@ export default function InvoiceListPage() {
     customerId: customerFilter || undefined,
   })
   const { data: customers } = useCustomers()
+
+  useEffect(() => {
+    if (openInvoiceId) setSheetId(openInvoiceId)
+  }, [openInvoiceId])
 
   return (
     <>
@@ -183,7 +190,7 @@ export default function InvoiceListPage() {
         </div>
       )}
 
-      <RecordSheet open={!!sheetId} onOpenChange={() => setSheetId(null)} evidenceId={sheetId} />
+      <RecordSheet open={!!sheetId} onOpenChange={() => setSheetId(null)} evidenceId={sheetId} recordType="invoice" />
     </>
   )
 }

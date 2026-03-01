@@ -1,6 +1,7 @@
 """Ingest router: CSV uploads, questionnaire, sample seed, job status. Integration endpoints in separate router."""
 from fastapi import APIRouter, Depends, UploadFile, HTTPException
 from celery.result import AsyncResult
+from sqlalchemy import select
 
 from app.api.schemas import IngestJobResponse, IngestJobStatusDTO, QuestionnairePayload, QuestionnaireSummary
 from app.deps import CurrentOrg, DbSession
@@ -60,7 +61,23 @@ async def ingest_invoices_csv(
 
 @router.post("/questionnaire", response_model=QuestionnaireSummary)
 async def ingest_questionnaire(body: QuestionnairePayload, org: CurrentOrg, session: DbSession):
-    # Store in org settings or a simple questionnaire table; MVP just acknowledge
+    from app.models.financial_profile import FinancialProfile
+    from app.models.base import gen_uuid
+    result = await session.execute(
+        select(FinancialProfile).where(FinancialProfile.org_id == org.id)
+    )
+    fp = result.scalar_one_or_none()
+    if fp:
+        fp.cash_balance = body.cash_balance
+        fp.currency = body.currency or fp.currency
+    else:
+        session.add(FinancialProfile(
+            id=gen_uuid(),
+            org_id=org.id,
+            cash_balance=body.cash_balance,
+            currency=body.currency,
+        ))
+    await session.commit()
     return QuestionnaireSummary(saved=True, message="Questionnaire data saved")
 
 

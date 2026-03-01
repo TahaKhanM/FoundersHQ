@@ -58,6 +58,17 @@ export const mockSpendingMetrics: SpendingMetricsDTO = {
   bufferRatio: 2.1,
   revenueBreakevenGap: -17200,
   updatedAt: "2026-02-28T10:00:00Z",
+  reconciliation: {
+    weekly_outflow_series: [
+      { week_start: "2026-02-03", total_outflow: 15200 },
+      { week_start: "2026-02-10", total_outflow: 18400 },
+      { week_start: "2026-02-17", total_outflow: 16800 },
+      { week_start: "2026-02-24", total_outflow: 17400 },
+    ],
+    period_outflow_total: 67800,
+    sum_of_weekly_totals: 67800,
+    mismatch: false,
+  },
 }
 
 // =============================================
@@ -187,35 +198,45 @@ export const mockInvoiceMetrics: InvoiceMetricsDTO = {
 // Runway Forecast
 // =============================================
 function generateRunwaySeries(): RunwayForecastDTO {
-  const series = []
-  let cashBase = 420000
-  let cashPess = 420000
-  for (let i = 0; i < 26; i++) {
+  const horizonWeeks = 26
+  const startCash = 420000
+  // Target runway: base 18 weeks, pess 11 weeks — align chart with metric cards
+  const cashWeeksBase = 18
+  const cashWeeksPess = 11
+  const netBurnBase = startCash / cashWeeksBase
+  const netBurnPess = startCash / cashWeeksPess
+
+  const series: Array<{ weekStart: string; cashBase: number; cashPess: number; flags: string[]; evidenceIds: string[] }> = []
+  let cashBase = startCash
+  let cashPess = startCash
+
+  for (let i = 0; i < horizonWeeks; i++) {
     const week = new Date(2026, 1, 28 + i * 7)
     const weekStr = week.toISOString().split("T")[0]
-    const outBase = 15000 + Math.random() * 5000
-    const inBase = i % 3 === 0 ? 8000 + Math.random() * 4000 : 2000 + Math.random() * 2000
-    const outPess = outBase * 1.2
-    const inPess = inBase * 0.7
-    cashBase = Math.max(0, cashBase - outBase + inBase)
-    cashPess = Math.max(0, cashPess - outPess + inPess)
+    cashBase = Math.max(0, cashBase - netBurnBase)
+    cashPess = Math.max(0, cashPess - netBurnPess)
     series.push({
       weekStart: weekStr,
       cashBase: Math.round(cashBase),
       cashPess: Math.round(cashPess),
-      flags: cashPess < 50000 ? ["low_cash_warning"] : [],
+      flags: cashPess < 50000 && cashPess > 0 ? ["low_cash_warning"] : [],
       evidenceIds: i % 4 === 0 ? ["txn_001", "inv_002"] : [],
     })
   }
+
+  const crashBaseIdx = series.findIndex((s) => s.cashBase <= 0)
   const crashPessIdx = series.findIndex((s) => s.cashPess <= 0)
+  const derivedWeeksBase = crashBaseIdx >= 0 ? crashBaseIdx : horizonWeeks
+  const derivedWeeksPess = crashPessIdx >= 0 ? crashPessIdx : horizonWeeks
+
   return {
     forecastId: "fc_001",
     generatedAt: "2026-02-28T10:00:00Z",
-    horizonWeeks: 26,
-    crashWeekBase: undefined,
+    horizonWeeks,
+    crashWeekBase: crashBaseIdx >= 0 ? series[crashBaseIdx].weekStart : undefined,
     crashWeekPess: crashPessIdx >= 0 ? series[crashPessIdx].weekStart : undefined,
-    cashWeeksBase: 18,
-    cashWeeksPess: 11,
+    cashWeeksBase: derivedWeeksBase,
+    cashWeeksPess: derivedWeeksPess,
     series,
   }
 }

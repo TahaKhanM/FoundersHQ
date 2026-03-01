@@ -2,7 +2,58 @@
 
 FastAPI backend for **FoundersHQ** with deterministic computation engines and strict LLM guardrails.
 
-## Stack
+## Full-stack run (stabilization checklist)
+
+Use these steps to run the app end-to-end with real data (`NEXT_PUBLIC_MOCK_API=false`).
+
+1. **Start DB and Redis** (from repo root)
+   ```bash
+   docker compose up -d db redis
+   ```
+
+2. **Backend: migrations**
+   ```bash
+   cd backend
+   cp .env.example .env   # edit if needed: DATABASE_URL, REDIS_URL, CELERY_* to localhost when running outside Docker
+   alembic upgrade head
+   ```
+
+3. **Backend: seed (optional, after at least one org exists)**
+   ```bash
+   python -m app.scripts.seed_dev_data
+   # or: python -m scripts.seed_dev_data
+   ```
+
+4. **Backend: API server**
+   ```bash
+   uvicorn app.main:app --reload
+   ```
+   API: http://localhost:8000
+
+5. **Backend: Celery worker** (separate terminal)
+   ```bash
+   cd backend
+   celery -A app.tasks.celery_app worker --loglevel=info
+   ```
+   Use `REDIS_URL=CELERY_BROKER_URL=redis://localhost:6379/...` in `.env` when running worker on host.
+
+6. **Frontend**
+   ```bash
+   cd frontend
+   cp .env.example .env.local
+   # Set NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 and NEXT_PUBLIC_MOCK_API=false for real API
+   pnpm install && pnpm dev
+   ```
+   App: http://localhost:3000
+
+**Smoke tests (real API):**
+- Global search: query "runway" → Runway page; query an invoice/transaction id → opens correct sheet.
+- Action queue: severity grouping, log touch persists after refresh.
+- Invoices tabs stay visible when switching between /invoices, /invoices/list, /invoices/actions.
+- Weekly outflow chart shows data or "No data for selected period."
+- RecordSheet loads real transaction/invoice when opening from search or alerts.
+
+---
 
 - **FastAPI** – REST API (OpenAPI at `/docs`)
 - **PostgreSQL** – primary store

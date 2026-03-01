@@ -83,10 +83,10 @@ export default function ExplainPage() {
                   <Button
                     key={q}
                     variant="outline"
-                    className="h-auto py-3 px-4 text-left text-sm justify-start"
+                    className="h-auto py-3 px-4 text-left text-sm justify-start max-w-full min-w-0"
                     onClick={() => handleSend(q)}
                   >
-                    {q}
+                    <span className="truncate block">{q}</span>
                   </Button>
                 ))}
               </div>

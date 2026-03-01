@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import (
     SpendingMetricsDTO,
+    SpendingReconciliationDTO,
     TransactionDTO,
     TransactionCategoryPatch,
     CategoryDTO,
@@ -34,6 +35,7 @@ from app.services.spending.metrics import (
     revenue_breakeven_gap,
     compute_baseline_weekly_outflow,
     compute_weekly_outflows_by_week,
+    reconcile_weekly_to_period,
 )
 from app.services.spending.alerts import spend_creep_alerts
 from app.utils.dates import week_start, period_30d_end, period_90d_end
@@ -83,6 +85,17 @@ async def get_spending_metrics(org: CurrentOrg, session: DbSession):
     gap = revenue_breakeven_gap(rr_nb)
     currencies = set(r[2] for r in rows)
     multi_currency = len(currencies) > 1
+
+    weekly_series = [(ws, tot) for ws, tot in sorted(by_week.items(), reverse=True)]
+    mismatch, sum_weekly = reconcile_weekly_to_period(weekly_series, out_90)
+    reconciliation = SpendingReconciliationDTO(
+        weekly_outflow_series=[{"week_start": str(ws), "total_outflow": float(tot)} for ws, tot in weekly_series],
+        period_outflow_total=out_90,
+        sum_of_weekly_totals=sum_weekly,
+        mismatch=mismatch,
+        mismatch_note="Weekly series sum differs from period outflow total" if mismatch else None,
+    )
+
     return SpendingMetricsDTO(
         total_outflow_30d=out_30,
         total_outflow_90d=out_90,
@@ -100,6 +113,7 @@ async def get_spending_metrics(org: CurrentOrg, session: DbSession):
         revenue_breakeven_gap=gap,
         currency="USD",
         multi_currency_warning=multi_currency,
+        reconciliation=reconciliation,
     )
 
 
@@ -117,6 +131,20 @@ async def list_transactions(
     result = await session.execute(q.offset(offset).limit(limit))
     items = [TransactionDTO.model_validate(r) for r in result.scalars().all()]
     return PaginatedResponse(items=items, page=page, page_size=page_size, total=total)
+
+
+@router.get("/transactions/{txn_id}", response_model=TransactionDTO)
+async def get_transaction(txn_id: str, org: CurrentOrg, session: DbSession):
+    result = await session.execute(
+        select(txn_models.Transaction).where(
+            txn_models.Transaction.id == txn_id,
+            txn_models.Transaction.org_id == org.id,
+        )
+    )
+    txn = result.scalar_one_or_none()
+    if not txn:
+        raise HTTPException(404, "Transaction not found")
+    return TransactionDTO.model_validate(txn)
 
 
 @router.patch("/transactions/{txn_id}", response_model=TransactionDTO)
@@ -237,7 +265,11 @@ async def patch_commitment(commitment_id: str, body: CommitmentPatch, org: Curre
 
 @router.get("/alerts", response_model=list[AlertDTO])
 async def list_alerts(org: CurrentOrg, session: DbSession):
-    # Get metrics to build spend creep alert
+    from app.services.spending.metrics import compute_weekly_outflows_by_week, compute_baseline_weekly_outflow, spend_creep_pct
+    from app.services.invoices.alerts import invoice_overdue_alerts
+    from app.models import invoice as inv_models
+    from sqlalchemy import func
+
     today = date.today()
     end_90 = today - timedelta(days=90)
     result = await session.execute(
@@ -247,11 +279,36 @@ async def list_alerts(org: CurrentOrg, session: DbSession):
         )
     )
     rows = result.all()
-    from app.services.spending.metrics import compute_weekly_outflows_by_week, compute_baseline_weekly_outflow, spend_creep_pct
     by_week = compute_weekly_outflows_by_week([(r[0], r[1]) for r in rows], today, 9)
     week_list = sorted(by_week.values(), reverse=True)
     baseline = compute_baseline_weekly_outflow(week_list, 1) if week_list else Decimal("0")
     current_week = week_list[0] if week_list else Decimal("0")
     creep = spend_creep_pct(baseline, current_week) if baseline else None
     alerts = spend_creep_alerts(creep, 0.25, [])
+
+    overdue_result = await session.execute(
+        select(
+            func.count(inv_models.Invoice.id).label("c"),
+            func.coalesce(func.sum(inv_models.Invoice.amount), 0).label("s"),
+        ).where(
+            inv_models.Invoice.org_id == org.id,
+            inv_models.Invoice.status == "overdue",
+        )
+    )
+    overdue_row = overdue_result.one_or_none()
+    if overdue_row and (overdue_row[0] or 0) > 0:
+        inv_ids_result = await session.execute(
+            select(inv_models.Invoice.id).where(
+                inv_models.Invoice.org_id == org.id,
+                inv_models.Invoice.status == "overdue",
+            )
+        )
+        evidence_ids = [r[0] for r in inv_ids_result.all()]
+        alerts.extend(
+            invoice_overdue_alerts(
+                overdue_count=overdue_row[0],
+                overdue_sum=overdue_row[1] or Decimal("0"),
+                evidence_ids=evidence_ids,
+            )
+        )
     return [AlertDTO(**a) for a in alerts]

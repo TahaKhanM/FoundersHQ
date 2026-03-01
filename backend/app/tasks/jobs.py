@@ -4,7 +4,7 @@ from decimal import Decimal
 from uuid import uuid4
 import hashlib
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -79,10 +79,11 @@ def import_transactions_csv(self, org_id: str, file_content_base64: str | None =
             action="import_transactions_csv",
             entity_type="job",
             entity_id=job_id,
-            metadata={"imported": imported, "skipped": skipped, "errors": errors},
+            details={"imported": imported, "skipped": skipped, "errors": errors},
         )
         session.add(audit_log)
         session.commit()
+        generate_org_notifications.delay(org_id, source="csv_import")
         return {"status": "done", "imported": imported, "skipped": skipped, "errors": errors}
     finally:
         session.close()
@@ -147,9 +148,10 @@ def import_invoices_csv(self, org_id: str, file_content_base64: str | None = Non
             except Exception as e:
                 errors.append(str(e))
         session.commit()
-        al = audit.AuditLog(id=str(uuid4()), org_id=org_id, action="import_invoices_csv", entity_type="job", entity_id=job_id, metadata={"imported": imported, "errors": errors})
+        al = audit.AuditLog(id=str(uuid4()), org_id=org_id, action="import_invoices_csv", entity_type="job", entity_id=job_id, details={"imported": imported, "errors": errors})
         session.add(al)
         session.commit()
+        generate_org_notifications.delay(org_id, source="csv_import")
         return {"status": "done", "imported": imported, "errors": errors}
     finally:
         session.close()
@@ -315,3 +317,104 @@ def ingest_funding_opportunities_batch(job_id: str, org_id: str, payload: list):
 def ingest_parsed_invoice_job(job_id: str, org_id: str, payload: dict):
     """Store parsed invoice job; if parse_confidence >= threshold create invoice else needs_review."""
     return {"status": "done"}
+
+
+@celery_app.task
+def generate_org_notifications(org_id: str, source: str = "csv_import"):
+    """Run all deterministic notification generators for an org. Called after CSV import or daily."""
+    from datetime import timedelta
+    session = get_sync_session()
+    try:
+        from app.services.notifications.generators import (
+            generate_spending_notifications,
+            generate_invoice_notifications,
+            generate_runway_notifications,
+            generate_funding_notifications,
+        )
+        from app.services.spending.metrics import (
+            compute_weekly_outflows_by_week,
+            compute_baseline_weekly_outflow,
+            spend_creep_pct,
+            cash_weeks,
+        )
+
+        rows = session.execute(
+            select(transaction.Transaction.txn_date, transaction.Transaction.amount).where(
+                transaction.Transaction.org_id == org_id,
+                transaction.Transaction.txn_date >= date.today() - timedelta(days=90),
+            )
+        ).all()
+        by_week = compute_weekly_outflows_by_week([(r[0], r[1]) for r in rows], date.today(), 9)
+        week_list = sorted(by_week.values(), reverse=True)
+        baseline = compute_baseline_weekly_outflow(week_list, 1) if week_list else None
+        current_week = week_list[0] if week_list else None
+        creep = spend_creep_pct(baseline, current_week) if baseline else None
+        generate_spending_notifications(session, org_id, creep, source=source)
+
+        overdue = session.execute(
+            select(
+                func.count(invoice.Invoice.id).label("c"),
+                func.coalesce(func.sum(invoice.Invoice.amount), 0).label("s"),
+            ).where(
+                invoice.Invoice.org_id == org_id,
+                invoice.Invoice.status == "overdue",
+            )
+        ).one()
+        open_r = session.execute(
+            select(func.count(invoice.Invoice.id)).where(
+                invoice.Invoice.org_id == org_id,
+                invoice.Invoice.status.in_(["open", "overdue"]),
+            )
+        )
+        open_count = open_r.scalar() or 0
+        generate_invoice_notifications(
+            session, org_id,
+            overdue_count=overdue[0] or 0,
+            overdue_sum=Decimal(str(overdue[1] or 0)),
+            open_count=open_count,
+            source=source,
+        )
+
+        try:
+            from app.models.financial_profile import FinancialProfile
+            fp = session.execute(
+                select(FinancialProfile).where(FinancialProfile.org_id == org_id)
+            ).scalar_one_or_none()
+            cash_bal = fp.cash_balance if fp else None
+        except Exception:
+            cash_bal = None
+        if cash_bal is not None:
+            out_90 = session.execute(
+                select(transaction.Transaction.txn_date, transaction.Transaction.amount).where(
+                    transaction.Transaction.org_id == org_id,
+                    transaction.Transaction.txn_date >= date.today() - timedelta(days=90),
+                )
+            ).all()
+            amounts = [r[1] for r in out_90]
+            out_total = sum(max(Decimal("0"), -a) for a in amounts)
+            in_total = sum(max(Decimal("0"), a) for a in amounts)
+            weekly_nb = (out_total - in_total) * Decimal("7") / Decimal("90") if (out_total or in_total) else Decimal("0")
+            cw, _ = cash_weeks(cash_bal, weekly_nb)
+            generate_runway_notifications(session, org_id, float(cw) if cw is not None else None, source=source)
+
+        generate_funding_notifications(session, org_id, 0, source=source)
+        session.commit()
+        return {"status": "done"}
+    except Exception as e:
+        session.rollback()
+        return {"status": "failed", "error": str(e)}
+    finally:
+        session.close()
+
+
+@celery_app.task
+def daily_notifications_job():
+    """Entrypoint for cron: generate notifications for all orgs."""
+    session = get_sync_session()
+    try:
+        org_ids = [r[0] for r in session.execute(select(org.Org.id)).all()]
+        for oid in org_ids:
+            generate_org_notifications.delay(str(oid), source="daily_job")
+        return {"status": "done", "orgs": len(org_ids)}
+    finally:
+        session.close()

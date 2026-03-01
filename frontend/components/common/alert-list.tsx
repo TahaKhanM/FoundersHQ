@@ -54,7 +54,7 @@ export function AlertList({ alerts, onClickEvidenceId }: AlertListProps) {
                 </Badge>
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                {alert.description}
+                {alert.description ?? (alert as { message?: string }).message}
               </p>
               {alert.evidenceIds.length > 0 && (
                 <EvidenceChips ids={alert.evidenceIds} onClickId={onClickEvidenceId} />

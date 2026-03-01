@@ -1,5 +1,5 @@
 """Action queue: ordered list of invoices to chase with suggested actions. Deterministic."""
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 
@@ -11,6 +11,10 @@ def action_queue_item(
     days_overdue: int,
     priority_score: float,
     evidence_ids: list[str],
+    last_touched_at: datetime | None = None,
+    last_touch_type: str | None = None,
+    is_completed: bool = False,
+    reasons: list[str] | None = None,
 ) -> dict:
     if days_overdue <= 0:
         suggested = "reminder"
@@ -27,4 +31,8 @@ def action_queue_item(
         "priority_score": priority_score,
         "suggested_action": suggested,
         "evidence_ids": evidence_ids,
+        "last_touched_at": last_touched_at,
+        "last_touch_type": last_touch_type,
+        "is_completed": is_completed,
+        "reasons": reasons or [],
     }
