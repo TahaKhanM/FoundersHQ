@@ -1,63 +1,95 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Skeleton } from "@/components/ui/skeleton"
-import { Button } from "@/components/ui/button"
-import { MetricCard } from "@/components/common/metric-card"
-import { AlertList } from "@/components/common/alert-list"
-import { RecordSheet } from "@/components/common/record-sheet"
-import { PageHeader } from "@/components/common/page-header"
-import { useSpendingMetrics, useAlerts, useTransactions } from "@/lib/api/hooks"
-import { formatCurrency, formatPercent, formatRatio } from "@/lib/utils/format"
-import { Upload } from "lucide-react"
 import {
-  BarChart,
   Bar,
-  LineChart,
+  BarChart,
+  CartesianGrid,
   Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
 } from "recharts"
+import { Upload } from "lucide-react"
 
-const categoryData = [
-  { name: "Payroll", amount: 28500 },
-  { name: "Cloud", amount: 4520 },
-  { name: "Marketing", amount: 3200 },
-  { name: "Office", amount: 2400 },
-  { name: "SaaS", amount: 849 },
-  { name: "Travel", amount: 780 },
-  { name: "Services", amount: 0 },
-]
+import { AlertList } from "@/components/common/alert-list"
+import { PageHeader } from "@/components/common/page-header"
+import { RecordSheet } from "@/components/common/record-sheet"
+import { PageError } from "@/components/dashboard/page-error"
+import { EvidenceChip, MetricCard, Money } from "@/components/finance"
+import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  useAlerts,
+  useSpendingMetrics,
+  useTransactions,
+} from "@/lib/api/queries/spending"
+import { formatCurrency } from "@/lib/utils/format"
 
-const weeklyTrend = [
-  { week: "W1", outflow: 15200 },
-  { week: "W2", outflow: 18400 },
-  { week: "W3", outflow: 16800 },
-  { week: "W4", outflow: 17400 },
-  { week: "W5", outflow: 14900 },
-  { week: "W6", outflow: 19200 },
-  { week: "W7", outflow: 16100 },
-  { week: "W8", outflow: 17800 },
-]
+const METRIC_LABELS = [
+  "Total Outflow (30d)",
+  "Net Burn (30d)",
+  "Run Rate",
+  "Spend Creep",
+  "Cash Weeks",
+  "Buffer Ratio",
+  "Revenue Gap",
+] as const
 
 export default function SpendingPage() {
   const pathname = usePathname()
-  const tabFromRoute = pathname === "/spending/transactions" ? "transactions" : pathname === "/spending/commitments" ? "commitments" : pathname === "/spending/rules" ? "rules" : "overview"
-  const { data: metrics, isLoading } = useSpendingMetrics()
+  const tabFromRoute =
+    pathname === "/spending/transactions"
+      ? "transactions"
+      : pathname === "/spending/commitments"
+        ? "commitments"
+        : pathname === "/spending/rules"
+          ? "rules"
+          : "overview"
+
+  const {
+    data: metrics,
+    isLoading,
+    error,
+    mutate,
+  } = useSpendingMetrics()
   const { data: alerts } = useAlerts()
   const { data: txnData } = useTransactions({ pageSize: 5 })
   const [sheetId, setSheetId] = useState<string | null>(null)
-  const weeklyTrendFromMetrics = metrics?.reconciliation?.weekly_outflow_series
-  const weeklyTrend = weeklyTrendFromMetrics?.length
-    ? weeklyTrendFromMetrics.map((w, i) => ({ week: `W${i + 1}`, outflow: Number(w.total_outflow) }))
-    : []
+
+  const weeklyTrend = useMemo(() => {
+    const series = metrics?.reconciliation?.weekly_outflow_series ?? []
+    return series.map((w, i) => ({
+      week: `W${i + 1}`,
+      outflow: Number(w.total_outflow),
+    }))
+  }, [metrics?.reconciliation?.weekly_outflow_series])
+
+  const categoryData = useMemo(() => {
+    // Synthesize a category breakdown from recent txns until backend ships one.
+    const out = new Map<string, number>()
+    for (const t of txnData?.data ?? []) {
+      if (t.amount < 0) {
+        const cur = out.get(t.categoryName) ?? 0
+        out.set(t.categoryName, cur + Math.abs(t.amount))
+      }
+    }
+    return Array.from(out.entries())
+      .map(([name, amount]) => ({ name, amount }))
+      .sort((a, b) => b.amount - a.amount)
+      .slice(0, 7)
+  }, [txnData?.data])
 
   return (
     <>
@@ -75,8 +107,10 @@ export default function SpendingPage() {
       />
 
       <Tabs value={tabFromRoute} className="w-full">
-        <TabsList className="w-full justify-start flex flex-wrap h-auto gap-1">
-          <TabsTrigger value="overview" asChild><Link href="/spending">Overview</Link></TabsTrigger>
+        <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1">
+          <TabsTrigger value="overview" asChild>
+            <Link href="/spending">Overview</Link>
+          </TabsTrigger>
           <TabsTrigger value="transactions" asChild>
             <Link href="/spending/transactions">Transactions</Link>
           </TabsTrigger>
@@ -89,22 +123,55 @@ export default function SpendingPage() {
         </TabsList>
 
         <TabsContent value="overview" className="mt-4 space-y-6">
-          {/* Metrics */}
-          {isLoading ? (
+          {error ? (
+            <PageError
+              error={error}
+              title="Couldn't load spending metrics."
+              onRetry={() => void mutate()}
+            />
+          ) : isLoading ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {Array.from({ length: 7 }).map((_, i) => (
-                <Skeleton key={i} className="h-24 rounded-lg" />
+              {METRIC_LABELS.map((label) => (
+                <div
+                  key={label}
+                  className="rounded-md border border-[color:var(--line)] bg-[color:var(--surface)] p-3"
+                >
+                  <Skeleton className="h-3 w-20 rounded" />
+                  <Skeleton className="mt-2 h-7 w-28 rounded" />
+                </div>
               ))}
             </div>
           ) : metrics ? (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <MetricCard title="Total Outflow (30d)" value={formatCurrency(metrics.totalOutflow30d)} tooltip="Total cash out in the last 30 days" />
-              <MetricCard title="Net Burn (30d)" value={formatCurrency(metrics.netBurn30d)} deltaDirection="down" tooltip="Net cash burn including revenue" />
-              <MetricCard title="Run Rate" value={formatCurrency(metrics.runRateOutflow)} tooltip="Annualized outflow run rate" />
-              <MetricCard title="Spend Creep" value={formatPercent(metrics.spendCreepPct)} deltaDirection="up" delta="MoM" tooltip="Month-over-month spending increase" />
-              <MetricCard title="Cash Weeks" value={`${metrics.cashWeeks}`} tooltip="Weeks of runway at current burn" />
-              <MetricCard title="Buffer Ratio" value={formatRatio(metrics.bufferRatio)} tooltip="Cash / monthly burn" />
-              <MetricCard title="Revenue Gap" value={formatCurrency(metrics.revenueBreakevenGap)} deltaDirection="down" tooltip="Gap to revenue breakeven" />
+              <MetricCard
+                label="Total Outflow (30d)"
+                value={<Money value={-metrics.totalOutflow30d} />}
+              />
+              <MetricCard
+                label="Net Burn (30d)"
+                value={<Money value={metrics.netBurn30d} />}
+              />
+              <MetricCard
+                label="Run Rate"
+                value={<Money value={-metrics.runRateOutflow} />}
+              />
+              <MetricCard
+                label="Spend Creep"
+                value={`${metrics.spendCreepPct.toFixed(1)}%`}
+                delta={metrics.spendCreepPct}
+              />
+              <MetricCard
+                label="Cash Weeks"
+                value={<Money value={metrics.cashWeeks} unit="weeks" />}
+              />
+              <MetricCard
+                label="Buffer Ratio"
+                value={`${metrics.bufferRatio.toFixed(1)}x`}
+              />
+              <MetricCard
+                label="Revenue Gap"
+                value={<Money value={metrics.revenueBreakevenGap} signed />}
+              />
             </div>
           ) : null}
 
@@ -112,44 +179,118 @@ export default function SpendingPage() {
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Category Outflow (Monthly Run Rate)</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  Category Outflow (recent)
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={260}>
-                  <BarChart data={categoryData} layout="vertical" margin={{ left: 20 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis type="number" tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} fontSize={12} />
-                    <YAxis type="category" dataKey="name" width={70} fontSize={12} />
-                    <Tooltip
-                      formatter={(value: number) => [`$${value.toLocaleString()}`, "Amount"]}
-                      contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
-                    />
-                    <Bar dataKey="amount" fill="hsl(var(--primary))" radius={[0, 4, 4, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+                {categoryData.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">
+                    No transactions yet.
+                  </p>
+                ) : (
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart
+                      data={categoryData}
+                      layout="vertical"
+                      margin={{ left: 20 }}
+                    >
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        stroke="var(--line)"
+                      />
+                      <XAxis
+                        type="number"
+                        tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                        fontSize={11}
+                        tick={{ fill: "var(--ink-3)" }}
+                        stroke="var(--line)"
+                      />
+                      <YAxis
+                        type="category"
+                        dataKey="name"
+                        width={90}
+                        fontSize={11}
+                        tick={{ fill: "var(--ink-2)" }}
+                        stroke="var(--line)"
+                      />
+                      <Tooltip
+                        formatter={(value: number) => [
+                          formatCurrency(value),
+                          "Amount",
+                        ]}
+                        contentStyle={{
+                          background: "var(--surface)",
+                          border: "1px solid var(--line)",
+                          borderRadius: 8,
+                          fontSize: 12,
+                          color: "var(--ink)",
+                        }}
+                        cursor={{ fill: "var(--surface-2)" }}
+                      />
+                      <Bar
+                        dataKey="amount"
+                        fill="var(--accent)"
+                        radius={[0, 4, 4, 0]}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium">Weekly Outflow Trend</CardTitle>
+                <CardTitle className="text-sm font-medium">
+                  Weekly Outflow Trend
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                {weeklyTrend.length > 0 ? (
+                {weeklyTrend.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">
+                    No data for selected period.
+                  </p>
+                ) : (
                   <ResponsiveContainer width="100%" height={260}>
                     <LineChart data={weeklyTrend}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                      <XAxis dataKey="week" fontSize={12} />
-                      <YAxis tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} fontSize={12} />
-                      <Tooltip
-                        formatter={(value: number) => [`$${value.toLocaleString()}`, "Outflow"]}
-                        contentStyle={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        stroke="var(--line)"
                       />
-                      <Line type="monotone" dataKey="outflow" stroke="hsl(var(--primary))" strokeWidth={2} dot={{ r: 4 }} />
+                      <XAxis
+                        dataKey="week"
+                        fontSize={11}
+                        tick={{ fill: "var(--ink-3)" }}
+                        stroke="var(--line)"
+                      />
+                      <YAxis
+                        tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
+                        fontSize={11}
+                        tick={{ fill: "var(--ink-3)" }}
+                        stroke="var(--line)"
+                      />
+                      <Tooltip
+                        formatter={(value: number) => [
+                          formatCurrency(value),
+                          "Outflow",
+                        ]}
+                        contentStyle={{
+                          background: "var(--surface)",
+                          border: "1px solid var(--line)",
+                          borderRadius: 8,
+                          fontSize: 12,
+                          color: "var(--ink)",
+                        }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="outflow"
+                        stroke="var(--accent)"
+                        strokeWidth={2}
+                        dot={{ r: 3, fill: "var(--accent)" }}
+                      />
                     </LineChart>
                   </ResponsiveContainer>
-                ) : (
-                  <p className="text-sm text-muted-foreground py-8 text-center">No data for selected period.</p>
                 )}
               </CardContent>
             </Card>
@@ -167,16 +308,28 @@ export default function SpendingPage() {
                   .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
                   .slice(0, 5)
                   .map((txn) => (
-                  <div key={txn.txnId} className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{txn.canonicalMerchant}</p>
-                      <p className="text-xs text-muted-foreground">{txn.categoryName}</p>
+                    <div
+                      key={txn.txnId}
+                      className="flex items-center justify-between"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-foreground">
+                          {txn.canonicalMerchant}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {txn.categoryName}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Money value={txn.amount} />
+                        <EvidenceChip
+                          ids={[txn.txnId]}
+                          kind="transaction"
+                          onOpen={(id) => setSheetId(id)}
+                        />
+                      </div>
                     </div>
-                    <span className="text-sm font-medium text-foreground">
-                      {formatCurrency(Math.abs(txn.amount))}
-                    </span>
-                  </div>
-                ))}
+                  ))}
               </div>
             </CardContent>
           </Card>
@@ -184,11 +337,15 @@ export default function SpendingPage() {
           {/* Alerts */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Spending Alerts</CardTitle>
+              <CardTitle className="text-sm font-medium">
+                Spending Alerts
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <AlertList
-                alerts={(alerts ?? []).filter((a) => a.type === "spend_creep" || a.type === "high_burn")}
+                alerts={(alerts ?? []).filter(
+                  (a) => a.type === "spend_creep" || a.type === "high_burn",
+                )}
                 onClickEvidenceId={setSheetId}
               />
             </CardContent>
@@ -196,7 +353,11 @@ export default function SpendingPage() {
         </TabsContent>
       </Tabs>
 
-      <RecordSheet open={!!sheetId} onOpenChange={() => setSheetId(null)} evidenceId={sheetId} />
+      <RecordSheet
+        open={!!sheetId}
+        onOpenChange={() => setSheetId(null)}
+        evidenceId={sheetId}
+      />
     </>
   )
 }

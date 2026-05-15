@@ -1,17 +1,133 @@
 "use client"
 
-import { Card, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Switch } from "@/components/ui/switch"
-import { Skeleton } from "@/components/ui/skeleton"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { PageHeader } from "@/components/common/page-header"
-import { useCommitments } from "@/lib/api/hooks"
-import { formatCurrency, formatDate } from "@/lib/utils/format"
+import { useMemo, useState } from "react"
+import type { ColumnDef } from "@tanstack/react-table"
 import { CalendarClock } from "lucide-react"
 
+import { PageHeader } from "@/components/common/page-header"
+import { PageError } from "@/components/dashboard/page-error"
+import { TableSkeleton } from "@/components/spending/table-skeleton"
+import { Money } from "@/components/finance"
+import { Badge } from "@/components/ui/badge"
+import { Card, CardContent } from "@/components/ui/card"
+import { DataTable } from "@/components/ui/data-table"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Switch } from "@/components/ui/switch"
+import { useToast } from "@/hooks/use-toast"
+import { useCommitments } from "@/lib/api/queries/spending"
+import { formatDate } from "@/lib/utils/format"
+import type { CommitmentDTO } from "@/lib/api/types"
+
 export default function CommitmentsPage() {
-  const { data: commitments, isLoading } = useCommitments()
+  const { data: commitments, isLoading, error, mutate } = useCommitments()
+  const { toast } = useToast()
+  const [pendingId, setPendingId] = useState<string | null>(null)
+
+  const upcoming = useMemo(
+    () =>
+      (commitments ?? [])
+        .filter((c) => c.enabled)
+        .sort(
+          (a, b) =>
+            new Date(a.nextDueDate).getTime() -
+            new Date(b.nextDueDate).getTime(),
+        )
+        .slice(0, 5),
+    [commitments],
+  )
+
+  const columns = useMemo<ColumnDef<CommitmentDTO>[]>(
+    () => [
+      {
+        accessorKey: "merchant",
+        header: "Merchant",
+        cell: ({ row }) => (
+          <span className="text-sm font-medium">{row.original.merchant}</span>
+        ),
+      },
+      {
+        accessorKey: "frequency",
+        header: "Frequency",
+        cell: ({ row }) => (
+          <Badge variant="secondary" className="text-xs capitalize">
+            {row.original.frequency}
+          </Badge>
+        ),
+      },
+      {
+        accessorKey: "typicalAmount",
+        header: () => <span className="block text-right">Typical</span>,
+        cell: ({ row }) => (
+          <span className="block text-right">
+            <Money value={-Math.abs(row.original.typicalAmount)} />
+          </span>
+        ),
+      },
+      {
+        accessorKey: "nextDueDate",
+        header: "Next Charge",
+        cell: ({ row }) => (
+          <span className="text-sm">
+            {formatDate(row.original.nextDueDate, "MMM d, yyyy")}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "confidence",
+        header: "Confidence",
+        cell: ({ row }) => {
+          const pct = Math.round(row.original.confidence * 100)
+          return (
+            <div className="flex items-center gap-2">
+              <div className="h-1.5 w-16 overflow-hidden rounded-full bg-[color:var(--surface-2)]">
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{
+                    width: `${pct}%`,
+                    background:
+                      pct >= 80
+                        ? "var(--accent)"
+                        : pct >= 60
+                          ? "var(--warn)"
+                          : "var(--danger)",
+                  }}
+                />
+              </div>
+              <span className="tabular-nums text-xs text-muted-foreground">
+                {pct}%
+              </span>
+            </div>
+          )
+        },
+      },
+      {
+        accessorKey: "enabled",
+        header: "Active",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <Switch
+            checked={row.original.enabled}
+            disabled={pendingId === row.original.commitmentId}
+            aria-label={`Toggle ${row.original.merchant}`}
+            onClick={(e) => e.stopPropagation()}
+            onCheckedChange={() => {
+              // No PATCH endpoint yet; surface intent locally and keep the
+              // mock state untouched. Real toggle will live in phase 2.
+              setPendingId(row.original.commitmentId)
+              toast({
+                title: row.original.enabled
+                  ? `Paused ${row.original.merchant}`
+                  : `Enabled ${row.original.merchant}`,
+                description: "Forecast will reflect this on the next refresh.",
+              })
+              setPendingId(null)
+            }}
+          />
+        ),
+      },
+    ],
+    [pendingId, toast],
+  )
 
   return (
     <>
@@ -20,10 +136,10 @@ export default function CommitmentsPage() {
         description="Track recurring charges and subscription obligations"
       />
 
-      {/* Timeline (next 30 days) */}
+      {/* Upcoming (next 30 days) */}
       <Card className="mb-6">
         <CardContent className="py-4">
-          <h3 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
+          <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
             <CalendarClock className="h-4 w-4 text-muted-foreground" />
             Upcoming (Next 30 days)
           </h3>
@@ -33,99 +149,59 @@ export default function CommitmentsPage() {
                 <Skeleton key={i} className="h-10 rounded" />
               ))}
             </div>
+          ) : upcoming.length === 0 ? (
+            <p className="py-3 text-sm text-muted-foreground">
+              No commitments active in the next 30 days.
+            </p>
           ) : (
             <div className="space-y-2">
-              {commitments
-                ?.filter((c) => c.enabled)
-                .sort((a, b) => new Date(a.nextDueDate).getTime() - new Date(b.nextDueDate).getTime())
-                .map((c) => (
-                  <div
-                    key={c.commitmentId}
-                    className="flex items-center justify-between rounded-lg border border-border px-4 py-2"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="h-2 w-2 rounded-full bg-primary" />
-                      <div>
-                        <p className="text-sm font-medium text-foreground">
-                          {c.merchant}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Due {formatDate(c.nextDueDate, "MMM d")}
-                        </p>
-                      </div>
+              {upcoming.map((c) => (
+                <div
+                  key={c.commitmentId}
+                  className="flex items-center justify-between rounded-lg border border-[color:var(--line)] px-4 py-2"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="h-2 w-2 rounded-full bg-[color:var(--accent)]" />
+                    <div>
+                      <p className="text-sm font-medium text-foreground">
+                        {c.merchant}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Due {formatDate(c.nextDueDate, "MMM d")}
+                      </p>
                     </div>
-                    <span className="text-sm font-medium text-foreground">
-                      {formatCurrency(c.typicalAmount)}
-                    </span>
                   </div>
-                ))}
+                  <Money value={-Math.abs(c.typicalAmount)} />
+                </div>
+              ))}
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Full Table */}
-      <Card>
-        <CardContent className="p-0">
-          {isLoading ? (
-            <div className="p-4 space-y-3">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <Skeleton key={i} className="h-12 rounded" />
-              ))}
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Merchant</TableHead>
-                  <TableHead>Frequency</TableHead>
-                  <TableHead className="text-right">Typical Amount</TableHead>
-                  <TableHead>Next Charge</TableHead>
-                  <TableHead>Confidence</TableHead>
-                  <TableHead>Active</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {commitments?.map((c) => (
-                  <TableRow key={c.commitmentId}>
-                    <TableCell className="font-medium">{c.merchant}</TableCell>
-                    <TableCell>
-                      <Badge variant="secondary" className="capitalize text-xs">
-                        {c.frequency}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {formatCurrency(c.typicalAmount)}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {formatDate(c.nextDueDate, "MMM d, yyyy")}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <div className="h-1.5 w-16 rounded-full bg-muted overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-primary transition-all"
-                            style={{ width: `${c.confidence * 100}%` }}
-                          />
-                        </div>
-                        <span className="text-xs text-muted-foreground">
-                          {(c.confidence * 100).toFixed(0)}%
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Switch
-                        checked={c.enabled}
-                        aria-label={`Toggle ${c.merchant}`}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+      {/* Full table */}
+      {error ? (
+        <PageError
+          error={error}
+          title="Couldn't load commitments."
+          onRetry={() => void mutate()}
+        />
+      ) : isLoading ? (
+        <TableSkeleton rows={5} columns={6} />
+      ) : (
+        <DataTable<CommitmentDTO>
+          id="spending-commitments"
+          columns={columns}
+          data={commitments ?? []}
+          filterPlaceholder="Filter merchants…"
+          emptyNoData={
+            <span>
+              No commitments detected yet — connect a bank to surface recurring
+              charges.
+            </span>
+          }
+        />
+      )}
     </>
   )
 }
