@@ -65,6 +65,39 @@ class OrgDataDeleteRequest(BaseModel):
     confirm: bool = False
 
 
+# ---- Phase 1.B: onboarding wizard ----
+class OnboardingCaptureDTO(BaseModel):
+    org_name: str | None = None
+    base_currency: str | None = None
+    fiscal_year_start_month: int | None = None
+    persona: str | None = None
+    data_choice: str | None = None
+
+
+class OnboardingStateDTO(BaseModel):
+    step: int
+    completed_at: datetime | None = None
+    captured: OnboardingCaptureDTO
+
+
+class OnboardingStepResponse(BaseModel):
+    step: int
+    completed_at: datetime | None = None
+    captured: OnboardingCaptureDTO
+
+
+class OnboardingCompleteResponse(BaseModel):
+    completed_at: datetime
+    org: OrgDTO
+
+
+class OnboardingSeedSampleResponse(BaseModel):
+    transactions_inserted: int
+    invoices_inserted: int
+    customers_inserted: int
+    commitments_inserted: int
+
+
 # ---- Auth: password reset / invitation accept ----
 class ForgotPasswordRequest(BaseModel):
     email: str
