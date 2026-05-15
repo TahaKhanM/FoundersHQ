@@ -1,6 +1,7 @@
 "use client"
 
 import { SWRConfig } from "swr"
+import { Shortcuts } from "@/components/layout/shortcuts"
 import { ThemeProvider } from "@/components/theme-provider"
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -13,6 +14,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         }}
       >
         {children}
+        <Shortcuts />
       </SWRConfig>
     </ThemeProvider>
   )
