@@ -1,7 +1,8 @@
 """API contract / smoke tests for key endpoints and DTO shapes."""
-import pytest
 import uuid
+
 from fastapi.testclient import TestClient
+
 from app.main import app
 
 client = TestClient(app)

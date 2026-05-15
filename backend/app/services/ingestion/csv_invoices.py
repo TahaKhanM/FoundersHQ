@@ -1,7 +1,8 @@
 """Parse CSV and yield invoice rows."""
 import csv
 import io
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 
 def parse_invoices_csv(content: bytes | str) -> Iterator[dict[str, Any]]:

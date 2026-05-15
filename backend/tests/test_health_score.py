@@ -1,13 +1,9 @@
 """Tests for deterministic health score formula and clipping."""
-import pytest
 from app.services.dashboard.health_score import (
-    compute_health_score,
-    s_runway,
-    s_invoice,
     clip,
-    W_RUNWAY,
-    W_BURN,
-    W_INVOICE,
+    compute_health_score,
+    s_invoice,
+    s_runway,
 )
 
 

@@ -1,8 +1,8 @@
 """Notifications router: list, count, read, read-all, archive."""
-from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func
-from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import UTC, datetime
+
+from fastapi import APIRouter, HTTPException, Query
+from sqlalchemy import func, select
 
 from app.api.schemas import NotificationDTO
 from app.deps import CurrentOrg, DbSession
@@ -51,7 +51,7 @@ async def mark_read(notification_id: str, org: CurrentOrg, session: DbSession):
     n = result.scalar_one_or_none()
     if not n:
         raise HTTPException(404, "Notification not found")
-    n.read_at = datetime.now(timezone.utc)
+    n.read_at = datetime.now(UTC)
     await session.commit()
     await session.refresh(n)
     return NotificationDTO.model_validate(n)
@@ -66,7 +66,7 @@ async def mark_all_read(org: CurrentOrg, session: DbSession):
         )
     )
     items = result.scalars().all()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for n in items:
         n.read_at = now
     await session.commit()
@@ -84,7 +84,7 @@ async def archive_notification(notification_id: str, org: CurrentOrg, session: D
     n = result.scalar_one_or_none()
     if not n:
         raise HTTPException(404, "Notification not found")
-    n.archived_at = datetime.now(timezone.utc)
+    n.archived_at = datetime.now(UTC)
     await session.commit()
     await session.refresh(n)
     return NotificationDTO.model_validate(n)

@@ -1,23 +1,25 @@
 """Runway router: forecast compute, get, scenarios, milestones, attribution."""
 from datetime import date, timedelta
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException
+
+from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
+
 from app.api.schemas import (
-    RunwayForecastRequest,
-    RunwayForecastDTO,
-    WeeklyForecastRowDTO,
-    RunwayForecastFullResponse,
-    ScenarioCreate,
-    MilestoneDTO,
-    MilestoneCreate,
-    MilestonePatch,
     AttributionItemDTO,
+    MilestoneCreate,
+    MilestoneDTO,
+    MilestonePatch,
+    RunwayForecastDTO,
+    RunwayForecastFullResponse,
+    RunwayForecastRequest,
+    ScenarioCreate,
+    WeeklyForecastRowDTO,
 )
 from app.deps import CurrentOrg, DbSession
 from app.models import runway as rw_models
-from app.utils.dates import week_start, iter_week_starts
 from app.services.runway.forecast import run_forecast
+from app.utils.dates import week_start
 
 router = APIRouter()
 
@@ -173,7 +175,7 @@ async def delete_milestone(milestone_id: str, org: CurrentOrg, session: DbSessio
         raise HTTPException(404, "Milestone not found")
     await session.delete(m)
     await session.commit()
-    return None
+    return
 
 
 @router.get("/attribution/{forecast_id}", response_model=list[AttributionItemDTO])

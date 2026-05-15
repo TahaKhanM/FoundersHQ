@@ -1,11 +1,10 @@
 """Org and membership models."""
-from datetime import datetime
-from uuid import UUID
-
-from sqlalchemy import String, DateTime, ForeignKey, func, Index
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID, ENUM
 import enum
+from datetime import datetime
+
+from sqlalchemy import DateTime, ForeignKey, Index, String, func
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, gen_uuid
 

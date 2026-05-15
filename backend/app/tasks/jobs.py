@@ -1,18 +1,15 @@
 """Celery tasks: imports, recompute, ingest. All idempotent."""
+import hashlib
 from datetime import date
 from decimal import Decimal
 from uuid import uuid4
-import hashlib
 
-from sqlalchemy import select, func
-from sqlalchemy.orm import Session
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 from app.config import get_settings
+from app.models import audit, commitment, funding, invoice, org, transaction
 from app.tasks.celery_app import celery_app
-from app.models.base import Base
-from app.models import user, org, transaction, commitment, invoice, runway, funding, audit
 
 # Sync session for Celery (workers use sync DB)
 engine = create_engine(get_settings().database_url_sync)
@@ -213,7 +210,7 @@ def recompute_invoice_predictions(org_id: str):
     session = get_sync_session()
     try:
         from app.services.invoices.lateness import lateness_fingerprint
-        from app.services.invoices.predictions import expected_pay_dates, confidence_tier
+        from app.services.invoices.predictions import confidence_tier, expected_pay_dates
         paid = session.execute(
             select(invoice.Invoice.due_date, invoice.Invoice.paid_date).where(
                 invoice.Invoice.org_id == org_id,
@@ -326,16 +323,16 @@ def generate_org_notifications(org_id: str, source: str = "csv_import"):
     session = get_sync_session()
     try:
         from app.services.notifications.generators import (
-            generate_spending_notifications,
+            generate_funding_notifications,
             generate_invoice_notifications,
             generate_runway_notifications,
-            generate_funding_notifications,
+            generate_spending_notifications,
         )
         from app.services.spending.metrics import (
-            compute_weekly_outflows_by_week,
-            compute_baseline_weekly_outflow,
-            spend_creep_pct,
             cash_weeks,
+            compute_baseline_weekly_outflow,
+            compute_weekly_outflows_by_week,
+            spend_creep_pct,
         )
 
         rows = session.execute(

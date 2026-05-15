@@ -1,17 +1,27 @@
 """Alembic environment; use sync DB URL and import all models."""
-import asyncio
 from logging.config import fileConfig
 
 from sqlalchemy import create_engine, pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
-from alembic import context
 
+from alembic import context
 from app.config import get_settings
-from app.models.base import Base
 
 # Import all models so metadata is populated
-from app.models import user, org, transaction, commitment, invoice, runway, funding, llm, audit, notification, financial_profile  # noqa: F401
+from app.models import (  # noqa: F401
+    audit,
+    commitment,
+    financial_profile,
+    funding,
+    invoice,
+    llm,
+    notification,
+    org,
+    runway,
+    transaction,
+    user,
+)
+from app.models.base import Base
 
 config = context.config
 if config.config_file_name is not None:

@@ -1,5 +1,4 @@
 """Tests for notification generators: severity order and threshold."""
-import pytest
 from app.services.notifications.generators import SEVERITY_ORDER
 
 

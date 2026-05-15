@@ -1,6 +1,6 @@
 """Date helpers for periods and buckets."""
+from collections.abc import Iterator
 from datetime import date, timedelta
-from typing import Iterator
 
 
 def period_30d_end(reference: date) -> date:

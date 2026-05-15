@@ -1,7 +1,7 @@
 """Tests for commitment detection heuristics."""
 from datetime import date, timedelta
 from decimal import Decimal
-import pytest
+
 from app.services.spending.commitments import detect_commitments
 
 

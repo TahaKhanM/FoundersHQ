@@ -1,6 +1,6 @@
 """Build facts payload for LLM from metrics, transactions, invoices, forecast."""
-from typing import Any
 from decimal import Decimal
+from typing import Any
 
 
 def serialize_for_facts(obj: Any) -> Any:

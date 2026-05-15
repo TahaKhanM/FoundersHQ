@@ -1,5 +1,6 @@
 """Celery app configuration."""
 from celery import Celery
+
 from app.config import get_settings
 
 settings = get_settings()

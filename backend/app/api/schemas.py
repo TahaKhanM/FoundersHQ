@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from uuid import UUID
 from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field

@@ -9,16 +9,18 @@ if _backend_root.name == "backend" and str(_backend_root) not in sys.path:
 
 from datetime import date, timedelta
 from decimal import Decimal
+
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.base import gen_uuid
 
 
 async def seed_org(session: AsyncSession, org_id: str) -> None:
     """Add synthetic transactions, customers, invoices, commitments, funding opportunities for org_id."""
-    from app.models import transaction as txn_models
     from app.models import commitment as comm_models
-    from app.models import invoice as inv_models
     from app.models import funding as fund_models
+    from app.models import invoice as inv_models
+    from app.models import transaction as txn_models
 
     cat1 = txn_models.TransactionCategory(id=gen_uuid(), org_id=org_id, name="Software")
     cat2 = txn_models.TransactionCategory(id=gen_uuid(), org_id=org_id, name="Office")
@@ -103,11 +105,13 @@ async def seed_org(session: AsyncSession, org_id: str) -> None:
 
 if __name__ == "__main__":
     import asyncio
-    from app.config import get_settings
-    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+
     from sqlalchemy import select
-    from app.models import user, org  # user first so Membership->User relationship resolves
     from sqlalchemy.exc import OperationalError
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+    from app.config import get_settings
+    from app.models import org  # user first so Membership->User relationship resolves
 
     def main():
         settings = get_settings()
@@ -120,8 +124,8 @@ if __name__ == "__main__":
                 o = result.scalar_one_or_none()
                 if not o:
                     # Create a default dev user + org so seed can run without registering first
-                    from app.models.user import User
                     from app.models.org import Membership
+                    from app.models.user import User
                     from app.utils.hashing import hash_password
                     dev_user = User(
                         id=gen_uuid(),

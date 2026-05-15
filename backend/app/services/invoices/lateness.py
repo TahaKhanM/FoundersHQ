@@ -1,6 +1,6 @@
 """Invoice status inference and lateness fingerprint (deterministic)."""
-from datetime import date
 import statistics
+from datetime import date
 
 
 def infer_status(due_date: date, paid_date: date | None, today: date | None = None) -> str:

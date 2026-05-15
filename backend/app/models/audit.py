@@ -1,9 +1,10 @@
 """Audit logs for imports, overrides, rule changes, touches, funding saves."""
 from datetime import datetime
 
-from sqlalchemy import String, DateTime, ForeignKey, func
+from sqlalchemy import DateTime, ForeignKey, String, func
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 
 from app.models.base import Base, gen_uuid
 

@@ -1,5 +1,5 @@
 """Money and decimal helpers; no currency conversion in MVP."""
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 
 def round_currency(value: Decimal, places: int = 2) -> Decimal:

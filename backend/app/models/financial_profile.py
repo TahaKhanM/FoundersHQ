@@ -2,9 +2,9 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import String, DateTime, ForeignKey, Numeric, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import DateTime, ForeignKey, Numeric, String, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, gen_uuid
 

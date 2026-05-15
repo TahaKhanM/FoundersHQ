@@ -1,9 +1,10 @@
 """LLM explanations (audit of LLM responses)."""
 from datetime import datetime
 
-from sqlalchemy import String, DateTime, ForeignKey, Float, func, Text
+from sqlalchemy import DateTime, Float, ForeignKey, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 
 from app.models.base import Base, gen_uuid
 

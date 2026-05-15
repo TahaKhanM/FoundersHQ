@@ -1,6 +1,4 @@
 """Spending alerts: spend creep, vendor anomaly. Deterministic."""
-from decimal import Decimal
-from datetime import date
 from uuid import uuid4
 
 from app.config import get_settings

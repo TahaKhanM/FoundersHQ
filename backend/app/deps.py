@@ -1,5 +1,4 @@
 """FastAPI dependencies: auth, org, DB session."""
-from collections.abc import AsyncGenerator
 from typing import Annotated
 from uuid import UUID
 
@@ -10,9 +9,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.models.user import User
-from app.models.org import Org, Membership
 from app.models.base import get_async_session
+from app.models.org import Membership, Org
+from app.models.user import User
 
 security = HTTPBearer(auto_error=False)
 

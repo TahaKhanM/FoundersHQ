@@ -1,7 +1,7 @@
 """Tests for deterministic search ranking (no LLM)."""
 from datetime import date
-import pytest
-from app.api.routers.search import _text_score, _recency_score, STATIC_PAGES
+
+from app.api.routers.search import STATIC_PAGES, _recency_score, _text_score
 
 
 def test_text_score_exact_match():

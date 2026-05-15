@@ -1,44 +1,43 @@
 """Spending router: metrics, transactions, categories, rules, commitments, alerts."""
 from datetime import date, timedelta
 from decimal import Decimal
-from fastapi import APIRouter, Depends, Query, HTTPException
-from sqlalchemy import select, func
-from sqlalchemy.ext.asyncio import AsyncSession
+
+from fastapi import APIRouter, HTTPException
+from sqlalchemy import func, select
 
 from app.api.schemas import (
-    SpendingMetricsDTO,
-    SpendingReconciliationDTO,
-    TransactionDTO,
-    TransactionCategoryPatch,
-    CategoryDTO,
-    CategorizationRuleDTO,
+    AlertDTO,
     CategorizationRuleCreate,
+    CategorizationRuleDTO,
     CategorizationRulePatch,
+    CategoryDTO,
     CommitmentDTO,
     CommitmentPatch,
-    AlertDTO,
-    PaginationParams,
     PaginatedResponse,
+    SpendingMetricsDTO,
+    SpendingReconciliationDTO,
+    TransactionCategoryPatch,
+    TransactionDTO,
 )
 from app.deps import CurrentOrg, DbSession
-from app.models import transaction as txn_models
 from app.models import commitment as comm_models
+from app.models import transaction as txn_models
+from app.services.spending.alerts import spend_creep_alerts
 from app.services.spending.metrics import (
-    total_outflow,
-    total_inflow,
-    net_burn,
-    run_rate_outflow,
-    run_rate_net_burn,
-    spend_creep_pct,
-    cash_weeks,
     buffer_ratio,
-    revenue_breakeven_gap,
+    cash_weeks,
     compute_baseline_weekly_outflow,
     compute_weekly_outflows_by_week,
+    net_burn,
     reconcile_weekly_to_period,
+    revenue_breakeven_gap,
+    run_rate_net_burn,
+    run_rate_outflow,
+    spend_creep_pct,
+    total_inflow,
+    total_outflow,
 )
-from app.services.spending.alerts import spend_creep_alerts
-from app.utils.dates import week_start, period_30d_end, period_90d_end
+from app.utils.dates import period_30d_end, period_90d_end
 from app.utils.pagination import paginate
 
 router = APIRouter()
@@ -234,7 +233,7 @@ async def delete_rule(rule_id: str, org: CurrentOrg, session: DbSession):
         raise HTTPException(404, "Rule not found")
     await session.delete(r)
     await session.commit()
-    return None
+    return
 
 
 @router.get("/commitments", response_model=list[CommitmentDTO])
@@ -265,10 +264,15 @@ async def patch_commitment(commitment_id: str, body: CommitmentPatch, org: Curre
 
 @router.get("/alerts", response_model=list[AlertDTO])
 async def list_alerts(org: CurrentOrg, session: DbSession):
-    from app.services.spending.metrics import compute_weekly_outflows_by_week, compute_baseline_weekly_outflow, spend_creep_pct
-    from app.services.invoices.alerts import invoice_overdue_alerts
-    from app.models import invoice as inv_models
     from sqlalchemy import func
+
+    from app.models import invoice as inv_models
+    from app.services.invoices.alerts import invoice_overdue_alerts
+    from app.services.spending.metrics import (
+        compute_baseline_weekly_outflow,
+        compute_weekly_outflows_by_week,
+        spend_creep_pct,
+    )
 
     today = date.today()
     end_90 = today - timedelta(days=90)

@@ -1,9 +1,10 @@
 """Notification model: persistent, org-scoped, dedupe by key."""
 from datetime import datetime
 
-from sqlalchemy import String, DateTime, ForeignKey, Text, func, Index
+from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 
 from app.models.base import Base, gen_uuid
 

@@ -1,19 +1,19 @@
 """Tests for deterministic spending metrics."""
 from decimal import Decimal
-import pytest
+
 from app.services.spending.metrics import (
-    total_outflow,
-    total_inflow,
-    net_burn,
-    run_rate_outflow,
-    run_rate_net_burn,
-    spend_creep_pct,
-    cash_weeks,
     buffer_ratio,
-    revenue_breakeven_gap,
+    cash_weeks,
     compute_baseline_weekly_outflow,
     compute_weekly_outflows_by_week,
+    net_burn,
     reconcile_weekly_to_period,
+    revenue_breakeven_gap,
+    run_rate_net_burn,
+    run_rate_outflow,
+    spend_creep_pct,
+    total_inflow,
+    total_outflow,
 )
 
 

@@ -1,31 +1,34 @@
 """Dashboard router: health score, metrics, alerts (deterministic, C0 from financial_profile)."""
 from datetime import date, timedelta
 from decimal import Decimal
-from fastapi import APIRouter, Depends
-from sqlalchemy import select, func
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas import HealthScoreResponse, HealthScoreBreakdownItem, DashboardMetricsDTO, AlertDTO
+from fastapi import APIRouter
+from sqlalchemy import func, select
+
+from app.api.schemas import (
+    AlertDTO,
+    DashboardMetricsDTO,
+    HealthScoreBreakdownItem,
+    HealthScoreResponse,
+)
 from app.deps import CurrentOrg, DbSession
-from app.models import transaction as txn_models
-from app.models import invoice as inv_models
 from app.models import commitment as comm_models
 from app.models import funding as fund_models
+from app.models import invoice as inv_models
+from app.models import transaction as txn_models
 from app.models.financial_profile import FinancialProfile
 from app.services.dashboard.health_score import compute_health_score
+from app.services.invoices.alerts import invoice_overdue_alerts
+from app.services.spending.alerts import spend_creep_alerts
 from app.services.spending.metrics import (
     cash_weeks,
-    total_outflow,
-    total_inflow,
-    net_burn,
-    run_rate_outflow,
-    run_rate_net_burn,
-    spend_creep_pct,
-    compute_weekly_outflows_by_week,
     compute_baseline_weekly_outflow,
+    compute_weekly_outflows_by_week,
+    net_burn,
+    spend_creep_pct,
+    total_inflow,
+    total_outflow,
 )
-from app.services.spending.alerts import spend_creep_alerts
-from app.services.invoices.alerts import invoice_overdue_alerts
 from app.utils.dates import period_30d_end, period_90d_end
 
 router = APIRouter()
@@ -52,7 +55,6 @@ async def get_dashboard_metrics(org: CurrentOrg, session: DbSession):
     out_90 = total_outflow(amounts_90)
     in_90 = total_inflow(amounts_90)
     nb_90 = net_burn(out_90, in_90)
-    rr_out = run_rate_outflow(out_90, 90)
     by_week = compute_weekly_outflows_by_week([(r[0], r[1]) for r in rows], today, 9)
     week_list = sorted(by_week.values(), reverse=True)
     baseline = compute_baseline_weekly_outflow(week_list, 1) if week_list else Decimal("0")
@@ -235,6 +237,6 @@ async def get_health_score(org: CurrentOrg, session: DbSession):
     )
     return HealthScoreResponse(
         score=score,
-        breakdown=[HealthScoreBreakdownItem(key=k, label=l, value=v, weightPct=w) for k, l, v, w in breakdown],
+        breakdown=[HealthScoreBreakdownItem(key=k, label=lbl, value=v, weightPct=w) for k, lbl, v, w in breakdown],
         notes=notes,
     )

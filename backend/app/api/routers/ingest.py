@@ -1,13 +1,19 @@
 """Ingest router: CSV uploads, questionnaire, sample seed, job status. Integration endpoints in separate router."""
-from fastapi import APIRouter, Depends, UploadFile, HTTPException
+import base64
+
 from celery.result import AsyncResult
+from fastapi import APIRouter, UploadFile
 from sqlalchemy import select
 
-from app.api.schemas import IngestJobResponse, IngestJobStatusDTO, QuestionnairePayload, QuestionnaireSummary
+from app.api.schemas import (
+    IngestJobResponse,
+    IngestJobStatusDTO,
+    QuestionnairePayload,
+    QuestionnaireSummary,
+)
 from app.deps import CurrentOrg, DbSession
 from app.tasks.celery_app import celery_app
-from app.tasks.jobs import import_transactions_csv, import_invoices_csv
-import base64
+from app.tasks.jobs import import_invoices_csv, import_transactions_csv
 
 router = APIRouter()
 
@@ -61,8 +67,8 @@ async def ingest_invoices_csv(
 
 @router.post("/questionnaire", response_model=QuestionnaireSummary)
 async def ingest_questionnaire(body: QuestionnairePayload, org: CurrentOrg, session: DbSession):
-    from app.models.financial_profile import FinancialProfile
     from app.models.base import gen_uuid
+    from app.models.financial_profile import FinancialProfile
     result = await session.execute(
         select(FinancialProfile).where(FinancialProfile.org_id == org.id)
     )

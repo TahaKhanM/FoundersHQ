@@ -1,5 +1,4 @@
 """Deterministic health score: weights sum to 100%. All from stored data."""
-from decimal import Decimal
 
 
 def clip(value: float, lo: float, hi: float) -> float:

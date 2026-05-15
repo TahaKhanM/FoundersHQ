@@ -1,8 +1,10 @@
 """Seed dev/demo data - CLI entry. Run from backend: python -m scripts.seed_dev_data"""
 import asyncio
-from app.config import get_settings
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from app.config import get_settings
 from app.models import org
 from app.scripts.seed_dev_data import seed_org
 

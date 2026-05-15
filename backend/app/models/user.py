@@ -1,12 +1,11 @@
 """User model."""
 from datetime import datetime
-from uuid import UUID
 
-from sqlalchemy import String, DateTime, func
-from sqlalchemy.orm import Mapped, relationship, mapped_column
+from sqlalchemy import DateTime, String, func
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, gen_uuid
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 
 class User(Base):

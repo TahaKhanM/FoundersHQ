@@ -1,10 +1,11 @@
 """LLM explain: call external LLM with guardrails. Optional OpenAI."""
-from typing import Any
 import re
+from typing import Any
+
 from app.config import get_settings
 from app.services.llm.guardrails import (
-    validate_llm_response,
     GUARDRAIL_PROMPT_INSTRUCTIONS,
+    validate_llm_response,
 )
 from app.utils.evidence import extract_evidence_ids_from_payload
 

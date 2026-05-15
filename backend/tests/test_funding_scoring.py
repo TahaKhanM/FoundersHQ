@@ -1,5 +1,4 @@
 """Tests for funding fit scoring."""
-import pytest
 from app.services.funding.scoring import score_route
 
 

@@ -51,10 +51,19 @@ extend-exclude = ["alembic/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "ASYNC", "RET", "SIM"]
-ignore = ["E501", "B008"]
+# E501 line length: handled by Black-style formatter, not strict here.
+# B008 default-arg call: needed for FastAPI Depends() patterns.
+# B904 raise-from: low-value noise on HTTPException re-raises.
+# E712 == True/False: required by SQLAlchemy filter expressions.
+# UP042 StrEnum: legacy enum patterns still common; will tighten later.
+ignore = ["E501", "B008", "B904", "E712", "UP042"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["ASYNC"]
+"tests/*" = ["ASYNC", "SIM222", "E741"]
+# F821 forward refs in Mapped["X"] strings are SQLAlchemy 2 style; ruff can't see them.
+"app/models/*" = ["F821"]
+# E402 module-level imports after dotenv() is the script pattern.
+"app/scripts/*" = ["E402", "E741"]
 
 [tool.mypy]
 python_version = "3.11"

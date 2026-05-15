@@ -1,7 +1,8 @@
 """Customers router: list, detail."""
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, func
-from app.api.schemas import CustomerDTO, CustomerDetailDTO, InvoiceDTO, PaginatedResponse
+from fastapi import APIRouter, HTTPException
+from sqlalchemy import func, select
+
+from app.api.schemas import CustomerDetailDTO, CustomerDTO, InvoiceDTO, PaginatedResponse
 from app.deps import CurrentOrg, DbSession
 from app.models import invoice as inv_models
 from app.utils.pagination import paginate

@@ -1,5 +1,4 @@
 """Funding fit scoring: Eligibility, Speed, CostRisk, Control, RiskCompatibility. Deterministic rules."""
-from decimal import Decimal
 
 
 def score_route(

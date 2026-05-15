@@ -1,15 +1,15 @@
 """Global search router: deterministic ranking, org-scoped. No LLM."""
 from datetime import date
+
 from fastapi import APIRouter, Query
-from sqlalchemy import select, or_, and_
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import and_, or_, select
 
 from app.api.schemas import SearchResultDTO
 from app.deps import CurrentOrg, DbSession
-from app.models import transaction as txn_models
-from app.models import invoice as inv_models
 from app.models import commitment as comm_models
 from app.models import funding as fund_models
+from app.models import invoice as inv_models
+from app.models import transaction as txn_models
 
 router = APIRouter()
 

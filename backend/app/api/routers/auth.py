@@ -1,12 +1,12 @@
 """Auth router: register, login, me, logout."""
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas import RegisterRequest, LoginRequest, UserDTO, SessionDTO, RegisterResponse
-from app.deps import get_async_session, get_current_user, CurrentUser
+from app.api.schemas import LoginRequest, RegisterRequest, RegisterResponse, SessionDTO, UserDTO
+from app.deps import CurrentUser, get_async_session
+from app.models.org import Membership, Org
 from app.models.user import User
-from app.models.org import Org, Membership
 from app.utils.hashing import hash_password, verify_password
 from app.utils.security import create_access_token
 

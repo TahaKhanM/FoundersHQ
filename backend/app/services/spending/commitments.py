@@ -1,8 +1,8 @@
 """Commitment detection heuristics: group by merchant, interval clustering, stable amounts."""
+import statistics
+from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
-from collections import defaultdict
-import statistics
 
 # Target intervals in days for frequency detection
 TARGET_INTERVALS = {

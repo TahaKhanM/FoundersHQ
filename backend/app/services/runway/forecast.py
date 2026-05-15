@@ -1,9 +1,8 @@
 """Runway forecast: weekly buckets, cash simulation, crash week. Deterministic."""
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
-from collections import defaultdict
 
-from app.utils.dates import week_start, iter_week_starts
+from app.utils.dates import iter_week_starts
 
 
 def run_forecast(

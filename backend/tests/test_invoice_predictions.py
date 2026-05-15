@@ -1,7 +1,7 @@
 """Tests for invoice predictions and lateness fingerprint."""
-from datetime import date, timedelta
-import pytest
-from app.services.invoices.lateness import lateness_fingerprint, infer_status
+from datetime import date
+
+from app.services.invoices.lateness import infer_status, lateness_fingerprint
 from app.services.invoices.predictions import confidence_tier, expected_pay_dates
 
 

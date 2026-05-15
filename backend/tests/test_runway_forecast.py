@@ -1,9 +1,9 @@
 """Tests for runway forecast simulation."""
 from datetime import date, timedelta
 from decimal import Decimal
-import pytest
+
 from app.services.runway.forecast import run_forecast
-from app.utils.dates import week_start, iter_week_starts
+from app.utils.dates import week_start
 
 
 def test_week_start():

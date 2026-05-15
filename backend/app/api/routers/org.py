@@ -1,14 +1,13 @@
 """Org router: get org, delete org data."""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from sqlalchemy import delete
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas import OrgDTO, OrgDataDeleteRequest
+from app.api.schemas import OrgDataDeleteRequest, OrgDTO
 from app.deps import CurrentOrg, DbSession
-from app.models import transaction, commitment, invoice, runway, funding
+from app.models import commitment, invoice, runway, transaction
 from app.models.audit import AuditLog
-from app.models.llm import LLMExplanation
 from app.models.funding import UserSavedOpportunity
+from app.models.llm import LLMExplanation
 
 router = APIRouter()
 
@@ -42,4 +41,4 @@ async def delete_org_data(
     await session.execute(delete(transaction.TransactionCategory).where(transaction.TransactionCategory.org_id == org.id))
     await session.execute(delete(transaction.BankAccount).where(transaction.BankAccount.org_id == org.id))
     await session.commit()
-    return None
+    return

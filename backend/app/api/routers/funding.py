@@ -1,20 +1,20 @@
 """Funding router: routes rank, opportunities, save, timeline, improvements."""
-from decimal import Decimal
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, func
+from fastapi import APIRouter
+from sqlalchemy import func, select
+
 from app.api.schemas import (
-    FundingRouteDTO,
     FundingOpportunityDTO,
     FundingOpportunitySaveRequest,
+    FundingRouteDTO,
     FundingTimelineItemDTO,
     ImprovementItemDTO,
     PaginatedResponse,
 )
-from app.deps import CurrentOrg, DbSession, CurrentUser
+from app.deps import CurrentOrg, CurrentUser, DbSession
 from app.models import funding as fund_models
-from app.services.funding.scoring import score_route
-from app.services.funding.timeline import timeline_sort_key, rationale_for_item
 from app.services.funding.improvements import improvement_items
+from app.services.funding.scoring import score_route
+from app.services.funding.timeline import rationale_for_item, timeline_sort_key
 from app.utils.pagination import paginate
 
 router = APIRouter()

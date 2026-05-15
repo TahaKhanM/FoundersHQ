@@ -1,12 +1,18 @@
 """LLM router: explain, draft-collection-message. Guardrails enforced."""
-from fastapi import APIRouter, Depends
-from app.api.schemas import LLMExplainRequest, LLMExplainResponse, LLMDraftMessageRequest, LLMDraftMessageResponse
-from app.deps import CurrentOrg, DbSession
+from fastapi import APIRouter
+
+from app.api.schemas import (
+    LLMDraftMessageRequest,
+    LLMDraftMessageResponse,
+    LLMExplainRequest,
+    LLMExplainResponse,
+)
 from app.config import get_settings
-from app.services.llm.facts_payload import build_facts_payload
-from app.services.llm.explain import call_llm_explain
-from app.services.llm.guardrails import build_facts_hash
+from app.deps import CurrentOrg, DbSession
 from app.models.llm import LLMExplanation
+from app.services.llm.explain import call_llm_explain
+from app.services.llm.facts_payload import build_facts_payload
+from app.services.llm.guardrails import build_facts_hash
 
 router = APIRouter()
 
@@ -23,6 +29,7 @@ async def post_llm_explain(
     invoices = []
     if "spending" in body.context_modules:
         from sqlalchemy import select
+
         from app.models import transaction as txn_models
         result = await session.execute(
             select(txn_models.Transaction).where(txn_models.Transaction.org_id == org.id).limit(20)
@@ -30,6 +37,7 @@ async def post_llm_explain(
         transactions = [{"id": r.id, "amount": r.amount, "txn_date": str(r.txn_date), "merchant_canonical": r.merchant_canonical} for r in result.scalars().all()]
     if "invoices" in body.context_modules:
         from sqlalchemy import select
+
         from app.models import invoice as inv_models
         result = await session.execute(
             select(inv_models.Invoice).where(inv_models.Invoice.org_id == org.id).limit(20)
@@ -70,6 +78,7 @@ async def draft_collection_message(
     session: DbSession,
 ):
     from sqlalchemy import select
+
     from app.models import invoice as inv_models
     result = await session.execute(
         select(inv_models.Invoice).where(

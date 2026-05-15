@@ -4,8 +4,22 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routers import (
+    auth,
+    customers,
+    dashboard,
+    funding,
+    ingest,
+    integrations,
+    invoices,
+    llm,
+    notifications,
+    org,
+    runway,
+    search,
+    spending,
+)
 from app.config import get_settings
-from app.api.routers import auth, org, ingest, spending, invoices, runway, funding, llm, customers, integrations, search, notifications, dashboard
 
 settings = get_settings()
 

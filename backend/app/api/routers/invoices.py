@@ -1,28 +1,26 @@
 """Invoices router: overview, list, detail, customers, action-queue, touches, templates."""
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func
-from sqlalchemy.ext.asyncio import AsyncSession
+
+from fastapi import APIRouter, HTTPException
+from sqlalchemy import func, select
 
 from app.api.schemas import (
-    InvoiceOverviewDTO,
-    InvoiceDTO,
+    ActionQueueItemDTO,
     InvoiceDetailDTO,
+    InvoiceDTO,
+    InvoiceOverviewDTO,
+    InvoiceParsingConfirmRequest,
     InvoicePredictionDTO,
     InvoiceRiskDTO,
-    CustomerDTO,
-    CustomerDetailDTO,
-    ActionQueueItemDTO,
-    TouchLogDTO,
-    TouchLogCreate,
-    InvoiceTemplatesRequest,
     InvoiceTemplateItem,
+    InvoiceTemplatesRequest,
     PaginatedResponse,
-    InvoiceParsingConfirmRequest,
+    TouchLogCreate,
+    TouchLogDTO,
 )
-from app.deps import CurrentOrg, DbSession, CurrentUserOptional
 from app.config import get_settings
+from app.deps import CurrentOrg, CurrentUserOptional, DbSession
 from app.models import invoice as inv_models
 from app.services.invoices.action_queue import action_queue_item
 from app.services.invoices.risk_scoring import priority_score_components
@@ -96,7 +94,7 @@ async def list_invoices(
 async def get_action_queue(org: CurrentOrg, session: DbSession):
     settings = get_settings()
     completion_days = settings.action_queue_completion_days
-    cutoff = datetime.now(timezone.utc) - timedelta(days=completion_days)
+    cutoff = datetime.now(UTC) - timedelta(days=completion_days)
 
     # Invoices open/overdue with customer name; subquery for latest event per invoice
     result = await session.execute(
@@ -177,7 +175,7 @@ async def get_action_queue(org: CurrentOrg, session: DbSession):
         if last_at is None:
             is_completed = False
         else:
-            last_utc = last_at if last_at.tzinfo else last_at.replace(tzinfo=timezone.utc)
+            last_utc = last_at if last_at.tzinfo else last_at.replace(tzinfo=UTC)
             is_completed = last_utc >= cutoff
         priority = priority_by_inv.get(inv.id)
         reasons: list[str] = reasons_by_inv.get(inv.id, [])
@@ -304,9 +302,11 @@ async def get_parsing_job(job_id: str, org: CurrentOrg, session: DbSession):
 
 @router.post("/parsing/jobs/{job_id}/confirm")
 async def confirm_parsing_job(job_id: str, body: InvoiceParsingConfirmRequest, org: CurrentOrg, session: DbSession):
-    from fastapi import HTTPException
-    from app.models.base import gen_uuid
     from datetime import datetime
+
+    from fastapi import HTTPException
+
+    from app.models.base import gen_uuid
     result = await session.execute(
         select(inv_models.InvoiceParsingJob).where(
             inv_models.InvoiceParsingJob.id == job_id,

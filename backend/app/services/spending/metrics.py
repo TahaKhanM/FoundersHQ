@@ -1,7 +1,7 @@
 """Deterministic spending metrics from transactions. All numeric computations reproducible from stored data."""
-from datetime import date, timedelta
-from decimal import Decimal
 from collections import defaultdict
+from datetime import date
+from decimal import Decimal
 
 from app.utils.dates import week_start
 from app.utils.money import round_currency, safe_divide

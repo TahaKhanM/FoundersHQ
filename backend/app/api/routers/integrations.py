@@ -1,16 +1,17 @@
 """Integration endpoints: funding opportunities batch ingest, invoice parsing ingest."""
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from sqlalchemy import select
+
 from app.api.schemas import (
-    FundingOpportunitiesIngestRequest,
     FundingIngestStats,
+    FundingOpportunitiesIngestRequest,
     ParsedInvoicePayload,
 )
+from app.config import get_settings
 from app.deps import CurrentOrg, DbSession
 from app.models import funding as fund_models
 from app.models import invoice as inv_models
 from app.models.base import gen_uuid
-from app.config import get_settings
 
 router = APIRouter()
 

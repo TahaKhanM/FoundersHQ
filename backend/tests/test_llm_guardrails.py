@@ -1,10 +1,8 @@
 """Tests for LLM guardrails: unknown numbers rejection, causal claim evidence requirement."""
-import pytest
 from app.services.llm.guardrails import (
-    validate_llm_response,
-    validate_causal_claims_require_evidence,
     extract_numbers_from_text,
-    numbers_in_facts_payload,
+    validate_causal_claims_require_evidence,
+    validate_llm_response,
 )
 
 
