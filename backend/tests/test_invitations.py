@@ -129,20 +129,13 @@ def _register(client, email: str = "owner@example.com", password: str = "pw12345
 
 
 @pytest.mark.asyncio
-async def test_create_invitation_admin_route_gated_to_admins(client):
+async def test_create_invitation_admin_route_gated_to_admins(client, async_session):
     # owner registers
     owner = _register(client, email=f"o-{uuid4().hex[:6]}@ex.com")
     owner_token = owner["access_token"]
-    org_id = (await _fetch_org_id(client, owner_token))
+    org_id = await _fetch_org_id(client, owner_token)
 
-    # accept-invite a member
-    member_resp = _register(client, email=f"m-{uuid4().hex[:6]}@ex.com")
-    member_user = member_resp["user"]
-
-    # owner attaches a member-role membership via DB (we don't expose admin endpoints yet)
-    from app.models.base import async_session_factory  # noqa: F401 — uses overridden dep elsewhere
-
-    # Simpler: invite a member-only user, then try as that user. Owner posts.
+    # Owner can post an invitation.
     r = client.post(
         "/org/invitations",
         headers={"Authorization": f"Bearer {owner_token}"},
@@ -156,8 +149,14 @@ async def test_create_invitation_admin_route_gated_to_admins(client):
     assert isinstance(data.get("dev_token"), str)
     assert len(data["dev_token"]) > 20
 
-    # member-role user cannot create invitations: 403.
-    member_token = member_resp["access_token"]
+    # Create a true member-role user attached to *this* org.
+    member_user = User(id=str(uuid4()), email=f"m-{uuid4().hex[:6]}@ex.com", password_hash=hash_password("pw1234567"))
+    member_membership = Membership(id=str(uuid4()), user_id=member_user.id, org_id=org_id, role="member")
+    async_session.add_all([member_user, member_membership])
+    await async_session.commit()
+    from app.utils.security import create_access_token
+    member_token = create_access_token(member_user.id)
+
     r2 = client.post(
         "/org/invitations",
         headers={"Authorization": f"Bearer {member_token}"},
