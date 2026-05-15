@@ -34,6 +34,8 @@ class Invoice(Base):
     paid_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    # Phase 2.C — multi-currency. See ``Transaction.fx_rate_used`` for shape.
+    fx_rate_used: Mapped[Decimal | None] = mapped_column(Numeric(18, 10), nullable=True)
     status: Mapped[str] = mapped_column(String(32), nullable=False)  # open/overdue/paid/cancelled
     po_number: Mapped[str | None] = mapped_column(String(128), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
