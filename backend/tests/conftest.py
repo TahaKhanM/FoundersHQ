@@ -72,6 +72,7 @@ def _import_all_models() -> None:
         invoice,
         llm,
         notification,
+        notification_preference,
         org,
         password_reset,
         runway,

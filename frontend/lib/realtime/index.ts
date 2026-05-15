@@ -1,6 +1,6 @@
 "use client"
 
-import { API_BASE_URL } from "./api/client"
+import { API_BASE_URL } from "../api/client"
 
 export type RealtimeEvent<T = unknown> = {
   seq: string

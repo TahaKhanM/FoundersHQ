@@ -1,18 +1,19 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Bell, Search } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { useEffect, useState } from "react"
+import { Search } from "lucide-react"
+
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
-import { useAlerts } from "@/lib/api/hooks"
+import { Bell } from "@/components/notifications/bell"
 import { GlobalCommandPalette } from "@/components/common/global-command-palette"
+import { useRealtimeConnect } from "@/lib/realtime/hooks"
 
 export function TopBar() {
   const [paletteOpen, setPaletteOpen] = useState(false)
-  const { data: alerts } = useAlerts()
-  const criticalCount = alerts?.filter((a) => a.severity === "critical").length ?? 0
+
+  // Open the SSE pipe once at the shell level so any subscriber down the
+  // tree gets `notification.created` / `notification.updated` events.
+  useRealtimeConnect()
 
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
@@ -41,18 +42,7 @@ export function TopBar() {
         </button>
 
         <div className="ml-auto flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="relative">
-            <Bell className="h-4 w-4 text-muted-foreground" />
-            {criticalCount > 0 && (
-              <Badge
-                variant="destructive"
-                className="absolute -right-1 -top-1 h-4 w-4 justify-center p-0 text-[10px]"
-              >
-                {criticalCount}
-              </Badge>
-            )}
-            <span className="sr-only">Notifications</span>
-          </Button>
+          <Bell />
 
           <div className="flex items-center gap-2">
             <Avatar className="h-8 w-8">

@@ -23,5 +23,6 @@ class Notification(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    snoozed_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     dedupe_key: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     source: Mapped[str | None] = mapped_column(String(64), nullable=True)

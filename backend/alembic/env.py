@@ -18,6 +18,7 @@ from app.models import (  # noqa: F401
     invoice,
     llm,
     notification,
+    notification_preference,
     org,
     password_reset,
     runway,

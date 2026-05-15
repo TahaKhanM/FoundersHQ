@@ -1,4 +1,10 @@
-"""Deterministic notification generators. Dedupe by (org_id, dedupe_key); no duplicate unread."""
+"""Deterministic notification generators. Dedupe by (org_id, dedupe_key); no duplicate unread.
+
+Every newly-created (not deduped) notification publishes a
+``notification.created`` SSE event via the best-effort in-process queue so
+the bell + inbox react in real time.
+"""
+import logging
 from decimal import Decimal
 from uuid import uuid4
 
@@ -6,6 +12,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.notification import Notification
+from app.services.events import publish_event_best_effort
+
+log = logging.getLogger(__name__)
 
 SEVERITY_ORDER = {"info": 0, "warning": 1, "critical": 2}
 
@@ -14,8 +23,33 @@ def _severity_rank(s: str) -> int:
     return SEVERITY_ORDER.get(s, 0)
 
 
+def _emit_created(n: Notification) -> None:
+    """Fire-and-forget SSE event for a newly inserted notification."""
+    try:
+        publish_event_best_effort(
+            n.org_id,
+            "notification.created",
+            {
+                "id": n.id,
+                "org_id": n.org_id,
+                "type": n.type,
+                "severity": n.severity,
+                "title": n.title,
+                "message": n.message,
+                "deep_link": n.deep_link,
+            },
+        )
+    except Exception:  # noqa: BLE001
+        log.exception("publish notification.created failed for %s", n.id)
+
+
 def _dedupe(session: Session, org_id: str, dedupe_key: str, type_: str, severity: str, title: str, message: str, evidence_ids: list | None, deep_link: str | None, source: str | None) -> Notification | None:
-    """Create or update notification; return the notification if created/updated, else None (skipped)."""
+    """Create or update notification; return the notification if created/updated, else None (skipped).
+
+    Publishes ``notification.created`` only when a brand-new row is inserted.
+    A dedupe upgrade (severity bump) emits no event — the existing row was
+    already broadcast and the bell count does not change.
+    """
     existing = session.execute(
         select(Notification).where(
             Notification.org_id == org_id,
@@ -46,6 +80,7 @@ def _dedupe(session: Session, org_id: str, dedupe_key: str, type_: str, severity
         source=source,
     )
     session.add(n)
+    _emit_created(n)
     return n
 
 
