@@ -19,7 +19,7 @@ def test_lateness_fingerprint():
         (date(2025, 1, 20), date(2025, 2, 5)), # 16 days late
     ]
     fp = lateness_fingerprint(paid)
-    assert fp["on_time_rate"] == 1/3
+    assert abs(fp["on_time_rate"] - 1 / 3) < 0.01  # service rounds to 2dp
     assert fp["median_delay"] in (4, 16)
     assert fp["p90_delay"] >= 4
 

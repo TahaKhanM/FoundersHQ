@@ -52,4 +52,7 @@ def test_no_causal_claim_no_evidence_required():
 
 def test_extract_numbers():
     assert "100" in extract_numbers_from_text("Amount is 100")
-    assert "50.5" in extract_numbers_from_text("50.5% increase") or "50" in extract_numbers_from_text("50.5%")
+    # Percent tokens keep the trailing % so e.g. "100%" and bare "100" stay
+    # distinguishable; matchers downstream strip % when comparing.
+    nums = extract_numbers_from_text("50.5% increase")
+    assert "50.5%" in nums or "50.5" in nums

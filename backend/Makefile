@@ -10,6 +10,9 @@ typecheck:
 	mypy app
 
 test:
-	pytest -x --tb=short
+	pytest -x --tb=short -m "not integration"
+
+test-integration:
+	pytest -x --tb=short -m integration
 
 verify: lint typecheck test

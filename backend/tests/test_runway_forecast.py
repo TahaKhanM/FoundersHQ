@@ -32,4 +32,6 @@ def test_run_forecast_no_crash():
     rows, crash_base, crash_pess = run_forecast(Decimal("5000"), horizon, inflows, outflows, start)
     assert crash_base is None
     assert crash_pess is None
-    assert rows[1]["ending_cash"] == Decimal("6000")
+    # 5000 + (2000 - 1000) net = 6000 after week 0, then + 1000 = 7000 after week 1
+    assert rows[0]["ending_cash"] == Decimal("6000")
+    assert rows[1]["ending_cash"] == Decimal("7000")

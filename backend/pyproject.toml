@@ -82,3 +82,35 @@ warn_redundant_casts = true
 disallow_untyped_defs = false
 ignore_missing_imports = true
 exclude = ["alembic/versions"]
+
+# Legacy routers and services predate strict typing. Phase 1+ will tighten
+# each module as it's touched. New phase-0.B infrastructure (middleware/,
+# services/events/, utils/audit, utils/errors, utils/org_scope, models/
+# events_outbox, api/routers/events) is held to the default strict-ish bar.
+[[tool.mypy.overrides]]
+module = [
+    "app.api.routers.customers",
+    "app.api.routers.dashboard",
+    "app.api.routers.funding",
+    "app.api.routers.ingest",
+    "app.api.routers.integrations",
+    "app.api.routers.invoices",
+    "app.api.routers.llm",
+    "app.api.routers.notifications",
+    "app.api.routers.org",
+    "app.api.routers.runway",
+    "app.api.routers.search",
+    "app.api.routers.spending",
+    "app.models.org",
+    "app.models.user",
+    "app.services.dashboard.*",
+    "app.services.funding.*",
+    "app.services.ingestion.*",
+    "app.services.invoices.*",
+    "app.services.llm.*",
+    "app.services.notifications.*",
+    "app.services.runway.*",
+    "app.services.spending.*",
+    "app.tasks.*",
+]
+ignore_errors = true

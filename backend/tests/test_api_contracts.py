@@ -1,9 +1,18 @@
-"""API contract / smoke tests for key endpoints and DTO shapes."""
+"""API contract / smoke tests for key endpoints and DTO shapes.
+
+These tests exercise the real FastAPI app, which opens a connection to the
+configured Postgres on import. Marked `integration` so `make test` (which
+runs `-m "not integration"`) skips them when DB isn't available locally.
+CI brings up Postgres and runs the full suite.
+"""
 import uuid
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+
+pytestmark = pytest.mark.integration
 
 client = TestClient(app)
 

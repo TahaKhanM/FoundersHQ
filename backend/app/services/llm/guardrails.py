@@ -40,9 +40,13 @@ def build_facts_hash(payload: dict[str, Any]) -> str:
 
 
 def extract_numbers_from_text(text: str) -> set[str]:
-    """Extract numeric tokens (integers and decimals) from text for validation."""
-    # Match numbers: integers, decimals, percentages
-    pattern = r"\d+\.?\d*%?|\d{1,3}(?:,\d{3})*(?:\.\d+)?"
+    """Extract numeric tokens (integers and decimals) from text for validation.
+
+    Requires digits on both sides of any decimal point so trailing sentence
+    punctuation ("100.") isn't captured as part of the number.
+    """
+    # Match numbers: integers, decimals, percentages, comma-grouped thousands.
+    pattern = r"\d{1,3}(?:,\d{3})+(?:\.\d+)?%?|\d+(?:\.\d+)?%?"
     return set(re.findall(pattern, text))
 
 

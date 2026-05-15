@@ -58,8 +58,8 @@ async def get_current_org(
     membership = result.scalar_one_or_none()
     if not membership:
         raise HTTPException(status_code=403, detail="No org membership")
-    result = await session.execute(select(Org).where(Org.id == membership.org_id))
-    org = result.scalar_one_or_none()
+    org_result = await session.execute(select(Org).where(Org.id == membership.org_id))
+    org = org_result.scalar_one_or_none()
     if not org:
         raise HTTPException(status_code=404, detail="Org not found")
     return org

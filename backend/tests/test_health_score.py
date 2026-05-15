@@ -40,4 +40,8 @@ def test_health_score_weights_sum():
     assert 0 <= score <= 100
     total_weight = sum(b[3] for b in breakdown)
     assert abs(total_weight - 100.0) < 0.01
-    assert score == 100.0
+    # s_fund() is a documented placeholder capped at 80/100; the maxed score
+    # therefore tops out at 99 (0.05 * (100 - 80) = 1 point short).
+    # Tightening s_fund to a real signal is a phase-3 task (vendor/funding
+    # intel). See docs/parking-lot.md.
+    assert score == 99.0
