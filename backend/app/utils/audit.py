@@ -20,32 +20,29 @@ from app.models.user import User
 async def record_audit(
     session: AsyncSession,
     *,
-    org: Org,
-    user: User | None,
     action: str,
     entity_type: str,
     entity_id: str | UUID,
+    org: Org | None = None,
+    user: User | None = None,
+    org_id: str | None = None,
+    user_id: str | None = None,
     details: dict[str, Any] | None = None,
     request_id: str | None = None,
 ) -> AuditLog:
-    """Persist an audit-log row scoped to ``org``.
+    """Persist an audit-log row scoped to an org.
 
-    Args:
-        session: Active async session; caller commits.
-        org: Org the mutation acted on.
-        user: Authenticated user; ``None`` for background jobs.
-        action: Verb-style identifier, e.g. ``"transaction.updated"``.
-        entity_type: Subject noun, e.g. ``"transaction"``.
-        entity_id: Subject id (UUID or string).
-        details: Optional structured payload (JSONB).
-        request_id: Correlates with ``X-Request-ID`` of the originating request.
-
-    Returns:
-        The persisted :class:`AuditLog` row (post-flush).
+    Accepts either object forms (``org=``, ``user=``) or id forms
+    (``org_id=``, ``user_id=``). Exactly one of each pair is required for
+    org; user is optional (background jobs).
     """
+    final_org_id = org_id if org_id is not None else (org.id if org is not None else None)
+    if final_org_id is None:
+        raise ValueError("record_audit requires either `org` or `org_id`")
+    final_user_id = user_id if user_id is not None else (user.id if user is not None else None)
     row = AuditLog(
-        org_id=org.id,
-        user_id=user.id if user is not None else None,
+        org_id=final_org_id,
+        user_id=final_user_id,
         action=action,
         entity_type=entity_type,
         entity_id=str(entity_id),
