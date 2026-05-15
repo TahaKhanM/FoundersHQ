@@ -1,4 +1,10 @@
-"""Seed dev/demo data for one org. Can be run from API (POST /ingest/sample-seed) or CLI."""
+"""Seed dev/demo data for one org. Can be run from API (POST /ingest/sample-seed) or CLI.
+
+The :func:`seed_org` coroutine is deterministic — callers pin ``today`` so
+contract tests get the same row counts every run. The CLI entrypoint at the
+bottom of the file defaults ``today`` to the system clock, which is fine
+because dev seeding isn't compared against fixtures.
+"""
 import sys
 from pathlib import Path
 
@@ -7,6 +13,7 @@ _backend_root = Path(__file__).resolve().parent.parent.parent
 if _backend_root.name == "backend" and str(_backend_root) not in sys.path:
     sys.path.insert(0, str(_backend_root))
 
+from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -15,12 +22,34 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.base import gen_uuid
 
 
-async def seed_org(session: AsyncSession, org_id: str) -> None:
-    """Add synthetic transactions, customers, invoices, commitments, funding opportunities for org_id."""
+@dataclass(frozen=True)
+class SeedStats:
+    transactions_inserted: int
+    invoices_inserted: int
+    customers_inserted: int
+    commitments_inserted: int
+    categories_inserted: int
+
+
+async def seed_org(
+    session: AsyncSession,
+    org_id: str,
+    *,
+    today: date | None = None,
+    commit: bool = True,
+) -> SeedStats:
+    """Insert a small deterministic fixture (txns/customers/invoices/commitment) for ``org_id``.
+
+    ``today`` pins all relative dates so tests are reproducible; callers
+    inside a FastAPI route pass ``today=date.today()``. ``commit`` defaults
+    to True for CLI use; routers that own their own commit semantics pass
+    ``commit=False``.
+    """
     from app.models import commitment as comm_models
-    from app.models import funding as fund_models
     from app.models import invoice as inv_models
     from app.models import transaction as txn_models
+
+    anchor = today or date.today()
 
     cat1 = txn_models.TransactionCategory(id=gen_uuid(), org_id=org_id, name="Software")
     cat2 = txn_models.TransactionCategory(id=gen_uuid(), org_id=org_id, name="Office")
@@ -28,16 +57,17 @@ async def seed_org(session: AsyncSession, org_id: str) -> None:
     session.add(cat2)
     await session.flush()
 
-    for i in range(30):
-        d = date.today() - timedelta(days=i * 3)
+    txn_count = 10
+    for i in range(txn_count):
+        d = anchor - timedelta(days=i * 3)
         amt = Decimal("-500") if i % 2 == 0 else Decimal("2000")
         session.add(txn_models.Transaction(
             id=gen_uuid(),
             org_id=org_id,
             txn_date=d,
             description=f"Txn {i}",
-            merchant_raw=f"Merchant_{i % 5}",
-            merchant_canonical=f"Merchant_{i % 5}",
+            merchant_raw=f"Merchant_{i % 3}",
+            merchant_canonical=f"Merchant_{i % 3}",
             amount=amt,
             currency="USD",
             source="questionnaire",
@@ -51,20 +81,35 @@ async def seed_org(session: AsyncSession, org_id: str) -> None:
     session.add(c2)
     await session.flush()
 
+    invoice_count = 0
     for i, cust in enumerate([c1, c2]):
-        for j in range(3):
-            due = date.today() + timedelta(days=30 * (j + 1))
+        for j in range(2):
+            invoice_count += 1
+            due = anchor + timedelta(days=30 * (j + 1))
             session.add(inv_models.Invoice(
                 id=gen_uuid(),
                 org_id=org_id,
                 customer_id=cust.id,
-                invoice_number=f"INV-{1000 + i*10 + j}",
-                issue_date=date.today() - timedelta(days=10),
+                invoice_number=f"INV-{1000 + i * 10 + j}",
+                issue_date=anchor - timedelta(days=10),
                 due_date=due,
                 amount=Decimal("5000") + Decimal(j * 1000),
                 currency="USD",
                 status="open" if j > 0 else "overdue",
             ))
+    # Plus a one-off invoice so we hit 3 total without the cartesian product
+    invoice_count += 1
+    session.add(inv_models.Invoice(
+        id=gen_uuid(),
+        org_id=org_id,
+        customer_id=c1.id,
+        invoice_number="INV-2000",
+        issue_date=anchor - timedelta(days=5),
+        due_date=anchor + timedelta(days=15),
+        amount=Decimal("7500"),
+        currency="USD",
+        status="open",
+    ))
     await session.flush()
 
     session.add(comm_models.Commitment(
@@ -74,33 +119,35 @@ async def seed_org(session: AsyncSession, org_id: str) -> None:
         frequency="monthly",
         typical_amount=Decimal("500"),
         currency="USD",
-        last_seen_date=date.today(),
-        next_due_date=date.today() + timedelta(days=30),
+        last_seen_date=anchor,
+        next_due_date=anchor + timedelta(days=30),
         confidence=0.85,
+        enabled=True,
+    ))
+    session.add(comm_models.Commitment(
+        id=gen_uuid(),
+        org_id=org_id,
+        merchant_canonical="Merchant_1",
+        frequency="monthly",
+        typical_amount=Decimal("250"),
+        currency="USD",
+        last_seen_date=anchor,
+        next_due_date=anchor + timedelta(days=30),
+        confidence=0.7,
         enabled=True,
     ))
     await session.flush()
 
-    prov = fund_models.FundingProvider(id=gen_uuid(), name="Demo Fund", provider_type="grant")
-    session.add(prov)
-    await session.flush()
-    for i in range(3):
-        session.add(fund_models.FundingOpportunity(
-            id=gen_uuid(),
-            provider_id=prov.id,
-            type="grant" if i == 0 else "loan",
-            name=f"Opportunity {i+1}",
-            geography="US",
-            amount_min=Decimal("10000"),
-            amount_max=Decimal("100000"),
-            deadline=date.today() + timedelta(days=60 + i*30),
-            eligibility_text="Eligibility text",
-            requirements_text="Requirements",
-            application_url="https://example.com/apply",
-            source_url="https://example.com",
-            parse_confidence=0.9,
-        ))
-    await session.commit()
+    if commit:
+        await session.commit()
+
+    return SeedStats(
+        transactions_inserted=txn_count,
+        invoices_inserted=invoice_count,
+        customers_inserted=2,
+        commitments_inserted=2,
+        categories_inserted=2,
+    )
 
 
 if __name__ == "__main__":

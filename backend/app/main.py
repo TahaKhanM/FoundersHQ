@@ -15,6 +15,7 @@ from app.api.routers import (
     invoices,
     llm,
     notifications,
+    onboarding,
     org,
     runway,
     search,
@@ -53,6 +54,7 @@ app.add_middleware(RequestIdMiddleware)
 register_error_handlers(app)
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
+app.include_router(onboarding.router, prefix="/onboarding", tags=["onboarding"])
 app.include_router(org.router, prefix="/org", tags=["org"])
 app.include_router(ingest.router, prefix="/ingest", tags=["ingest"])
 app.include_router(spending.router, prefix="/spending", tags=["spending"])
