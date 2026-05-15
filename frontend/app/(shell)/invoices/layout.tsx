@@ -4,8 +4,13 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { PageHeader } from "@/components/common/page-header"
+import { useIngestRealtime, useInvoicesRealtime } from "@/lib/realtime/domain-hooks"
 
 export default function InvoicesLayout({ children }: { children: React.ReactNode }) {
+  // Live-refresh the invoice family on touches, parsing confirmations, and
+  // CSV-import progress events.
+  useInvoicesRealtime()
+  useIngestRealtime()
   const pathname = usePathname()
   const tabFromRoute =
     pathname === "/invoices/list"
