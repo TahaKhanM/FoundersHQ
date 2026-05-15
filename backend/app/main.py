@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routers import (
+    audit,
     auth,
     customers,
     dashboard,
@@ -66,6 +67,7 @@ app.include_router(search.router, prefix="/search", tags=["search"])
 app.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 app.include_router(events.router, prefix="/events", tags=["events"])
+app.include_router(audit.router, prefix="/audit", tags=["audit"])
 
 
 @app.get("/health")

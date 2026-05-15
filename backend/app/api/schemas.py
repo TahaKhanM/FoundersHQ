@@ -546,10 +546,32 @@ class NotificationDTO(BaseModel):
     created_at: datetime | None = None
     read_at: datetime | None = None
     archived_at: datetime | None = None
+    snoozed_until: datetime | None = None
     dedupe_key: str | None = None
     source: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# The Inbox supports four discrete snooze durations; no free-form picker
+# until we have a clear UX need.
+SnoozeDuration = str  # validated by literal type below
+
+
+class NotificationSnoozeRequest(BaseModel):
+    duration: str = Field(..., pattern="^(1h|4h|24h|monday)$")
+
+
+class NotificationPreferenceDTO(BaseModel):
+    type: str
+    in_app: bool
+    email: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class NotificationPreferenceUpdate(BaseModel):
+    preferences: list[NotificationPreferenceDTO]
 
 
 # ---- Dashboard / Health score ----
@@ -661,3 +683,23 @@ class InvoiceParsingConfirmRequest(BaseModel):
     currency: str
     po_number: str | None = None
     notes: str | None = None
+
+
+# ---- Audit log ----
+class AuditLogDTO(BaseModel):
+    id: str
+    org_id: str
+    user_id: str | None = None
+    action: str
+    entity_type: str
+    entity_id: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+    request_id: str | None = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AuditLogListResponse(BaseModel):
+    items: list[AuditLogDTO]
+    next_cursor: str | None = None

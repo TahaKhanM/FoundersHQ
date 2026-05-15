@@ -71,8 +71,7 @@ def build_audit_query(filters: AuditFilters, *, now: datetime) -> Select[tuple[A
         q = q.where(AuditLog.user_id == filters.user_id)
 
     q = q.order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
-    q = q.limit(_clamp_limit(filters.limit))
-    return q
+    return q.limit(_clamp_limit(filters.limit))
 
 
 # ---- Cursor ----

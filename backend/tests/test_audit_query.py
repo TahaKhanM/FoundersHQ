@@ -11,7 +11,6 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
 
 from app.models.audit import AuditLog
 from app.models.org import Org
@@ -267,9 +266,7 @@ async def test_cursor_paginates_stably(async_session, fixed_now):
 def test_limit_clamped_to_max():
     f = AuditFilters(org_id="x", limit=99999)
     q = build_audit_query(f, now=datetime(2026, 5, 15, tzinfo=UTC))
-    compiled = q.compile()
-    # The LIMIT is rendered into the bound params; pull it via the constructed query.
-    # SQLAlchemy stores limit at the Select object level.
+    # SQLAlchemy stores the LIMIT on the Select object; presence is what we assert.
     assert q._limit_clause is not None  # type: ignore[attr-defined]
 
 
