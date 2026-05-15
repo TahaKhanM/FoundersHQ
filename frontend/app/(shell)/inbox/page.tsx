@@ -9,8 +9,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { EmptyState } from "@/components/common/empty-state"
 import { PageHeader } from "@/components/common/page-header"
+import { InsightRow } from "@/components/notifications/insight-row"
 import { NotificationRow } from "@/components/notifications/notification-row"
 import { NotificationPreferences } from "@/components/notifications/preferences"
+import {
+  useInsights,
+  useInsightsMutate,
+} from "@/lib/api/queries/insights"
 import {
   useNotificationsList,
   useNotificationsMutate,
@@ -19,15 +24,18 @@ import {
 } from "@/lib/api/queries/notifications"
 import { useRealtimeChannel } from "@/lib/realtime/hooks"
 
-const VALID_TABS: NotificationStatus[] = ["unread", "all", "archived"]
+type InboxTab = NotificationStatus | "insights"
 
-const TAB_LABELS: Record<NotificationStatus, string> = {
+const VALID_TABS: InboxTab[] = ["unread", "all", "archived", "insights"]
+
+const TAB_LABELS: Record<InboxTab, string> = {
   unread: "Unread",
   all: "All",
   archived: "Archived",
+  insights: "Insights",
 }
 
-const TAB_EMPTY: Record<NotificationStatus, { title: string; description: string }> = {
+const TAB_EMPTY: Record<InboxTab, { title: string; description: string }> = {
   unread: {
     title: "Inbox zero.",
     description:
@@ -41,6 +49,11 @@ const TAB_EMPTY: Record<NotificationStatus, { title: string; description: string
   archived: {
     title: "Nothing in the archive.",
     description: "Archived notifications will show up here so you can revisit them later.",
+  },
+  insights: {
+    title: "No active insights.",
+    description:
+      "Insights surface automatically when cash, invoices, or spending change in interesting ways.",
   },
 }
 
@@ -57,16 +70,23 @@ function InboxPageInner() {
   const router = useRouter()
   const params = useSearchParams()
   const rawTab = params.get("tab")
-  const tab: NotificationStatus = (
-    VALID_TABS.includes(rawTab as NotificationStatus) ? rawTab : "unread"
-  ) as NotificationStatus
+  const tab: InboxTab = (
+    VALID_TABS.includes(rawTab as InboxTab) ? rawTab : "unread"
+  ) as InboxTab
+  const isInsights = tab === "insights"
 
-  const list = useNotificationsList(tab, 50)
+  const list = useNotificationsList(
+    isInsights ? "unread" : (tab as NotificationStatus),
+    50,
+  )
+  const insights = useInsights("active", 50)
   const { refreshAll } = useNotificationsMutate()
+  const { refreshAll: refreshInsights } = useInsightsMutate()
 
-  // Live updates: any new or updated notification revalidates the active list.
+  // Live updates: notifications + insights both revalidate.
   useRealtimeChannel("notification.created", () => refreshAll())
   useRealtimeChannel("notification.updated", () => refreshAll())
+  useRealtimeChannel("insight.created", () => refreshInsights())
 
   const handleTabChange = useCallback(
     (next: string) => {
@@ -113,26 +133,36 @@ function InboxPageInner() {
           ))}
         </TabsList>
 
-        {VALID_TABS.map((t) => (
+        {VALID_TABS.map((t) => {
+          const onInsightsTab = t === "insights"
+          const loading = onInsightsTab ? insights.isLoading : list.isLoading
+          const err = onInsightsTab ? insights.error : list.error
+          const rows = onInsightsTab ? insights.data ?? [] : items
+          const empty = !loading && !err && rows.length === 0
+          return (
           <TabsContent key={t} value={t} className="space-y-4">
             <Card>
               <CardContent className="p-0">
-                {list.isLoading && (
+                {loading && (
                   <div className="space-y-2 p-4">
                     {[0, 1, 2, 3].map((i) => (
                       <Skeleton key={i} className="h-16 w-full" />
                     ))}
                   </div>
                 )}
-                {list.error && !list.isLoading && (
+                {err && !loading && (
                   <div className="p-6 text-sm text-destructive">
-                    Failed to load notifications.{" "}
-                    <Button variant="link" className="px-1" onClick={() => list.mutate()}>
+                    Failed to load {onInsightsTab ? "insights" : "notifications"}.{" "}
+                    <Button
+                      variant="link"
+                      className="px-1"
+                      onClick={() => (onInsightsTab ? insights.mutate() : list.mutate())}
+                    >
                       Retry
                     </Button>
                   </div>
                 )}
-                {!list.isLoading && !list.error && items.length === 0 && (
+                {empty && (
                   <div className="p-6">
                     <EmptyState
                       title={TAB_EMPTY[t].title}
@@ -148,9 +178,20 @@ function InboxPageInner() {
                     />
                   </div>
                 )}
-                {!list.isLoading && !list.error && items.length > 0 && (
+                {!loading && !err && rows.length > 0 && onInsightsTab && (
                   <div>
-                    {items.map((n) => (
+                    {(insights.data ?? []).map((insight) => (
+                      <InsightRow
+                        key={insight.id}
+                        insight={insight}
+                        onDismiss={() => refreshInsights()}
+                      />
+                    ))}
+                  </div>
+                )}
+                {!loading && !err && rows.length > 0 && !onInsightsTab && (
+                  <div>
+                    {(rows as NotificationDTO[]).map((n) => (
                       <NotificationRow
                         key={n.id}
                         notification={n}
@@ -162,7 +203,8 @@ function InboxPageInner() {
               </CardContent>
             </Card>
           </TabsContent>
-        ))}
+          )
+        })}
       </Tabs>
 
       <div className="mt-8 max-w-3xl">

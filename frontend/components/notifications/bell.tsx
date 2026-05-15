@@ -11,6 +11,10 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import {
+  useActiveInsightCount,
+  useInsightsMutate,
+} from "@/lib/api/queries/insights"
+import {
   useNotificationCount,
   useNotificationsList,
   useNotificationsMutate,
@@ -43,16 +47,23 @@ function formatTimeAgo(iso: string | null): string {
 }
 
 export function Bell() {
-  const { data: count = 0 } = useNotificationCount()
+  const { data: notificationCount = 0 } = useNotificationCount()
+  const { data: insightCount = 0 } = useActiveInsightCount()
   const { data: unread = [] } = useNotificationsList("unread", 5)
   const { refreshAll } = useNotificationsMutate()
+  const { refreshAll: refreshInsights } = useInsightsMutate()
 
-  // Live update: any new notification re-fetches the bell + popover list.
+  const count = notificationCount + insightCount
+
+  // Live update: notifications + insights both poke the badge.
   useRealtimeChannel("notification.created", () => {
     refreshAll()
   })
   useRealtimeChannel("notification.updated", () => {
     refreshAll()
+  })
+  useRealtimeChannel("insight.created", () => {
+    refreshInsights()
   })
 
   const top5: NotificationDTO[] = unread.slice(0, 5)
