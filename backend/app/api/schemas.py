@@ -65,6 +65,66 @@ class OrgDataDeleteRequest(BaseModel):
     confirm: bool = False
 
 
+# ---- Auth: password reset / invitation accept ----
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ForgotPasswordResponse(BaseModel):
+    ok: bool = True
+    # Only set in non-prod (settings.env != "prod"); shown to the user once.
+    dev_token: str | None = None
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(..., min_length=8)
+
+
+class ResetPasswordResponse(BaseModel):
+    ok: bool = True
+
+
+class AcceptInviteRequest(BaseModel):
+    token: str
+    email: str
+    password: str | None = None  # required only if no user exists for the email
+
+
+# ---- Org: invitations + members ----
+class InvitationCreate(BaseModel):
+    email: str
+    role: str = Field(..., pattern="^(admin|member)$")
+
+
+class InvitationDTO(BaseModel):
+    id: str
+    org_id: str
+    email: str
+    role: str
+    expires_at: datetime
+    accepted_at: datetime | None = None
+    revoked_at: datetime | None = None
+    created_at: datetime
+    # Only present immediately after creation in non-prod envs.
+    dev_token: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MembershipDTO(BaseModel):
+    id: str
+    org_id: str
+    user_id: str
+    email: str
+    role: str
+    created_at: datetime
+
+
+class MembershipPatch(BaseModel):
+    role: str = Field(..., pattern="^(owner|admin|member)$")
+
+
 # ---- Ingest ----
 class IngestJobResponse(BaseModel):
     job_id: str

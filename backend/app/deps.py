@@ -87,6 +87,32 @@ async def get_current_user_optional(
     return result.scalar_one_or_none()
 
 
+def requires_role(*roles: str):
+    """Return a dependency that 403s unless the current user's first membership matches one of `roles`.
+
+    Server-side RBAC gate. The frontend's permissions check is UX only — this is the boundary.
+    """
+    async def _dep(
+        user: Annotated[User, Depends(get_current_user)],
+        session: Annotated[AsyncSession, Depends(get_async_session)],
+    ) -> Membership:
+        result = await session.execute(
+            select(Membership)
+            .where(Membership.user_id == user.id)
+            .order_by(Membership.created_at.asc())
+            .limit(1)
+        )
+        membership = result.scalar_one_or_none()
+        if membership is None or membership.role not in roles:
+            raise HTTPException(
+                status_code=403,
+                detail={"code": "forbidden", "message": "Requires role"},
+            )
+        return membership
+
+    return Depends(_dep)
+
+
 # Type aliases for route injection
 CurrentUser = Annotated[User, Depends(get_current_user)]
 CurrentUserOptional = Annotated[User | None, Depends(get_current_user_optional)]

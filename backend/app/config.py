@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     # App
     app_name: str = "FoundersHQ"
     debug: bool = False
+    env: str = "dev"  # "dev" | "test" | "prod" — gates dev-only response fields
 
     # Database
     database_url: str = "postgresql+asyncpg://foundershq:foundershq@db:5432/foundershq"

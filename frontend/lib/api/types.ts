@@ -12,6 +12,55 @@ export interface SessionDTO {
   tokenExpiresAt: string
 }
 
+export type OrgRole = "owner" | "admin" | "member"
+
+export interface InvitationDTO {
+  id: string
+  orgId: string
+  email: string
+  role: Exclude<OrgRole, "owner">
+  expiresAt: string
+  acceptedAt: string | null
+  revokedAt: string | null
+  createdAt: string
+  // dev-only in non-prod backends; shown once after creation.
+  devToken?: string | null
+}
+
+export interface InvitationCreateInput {
+  email: string
+  role: Exclude<OrgRole, "owner">
+}
+
+export interface MembershipDTO {
+  id: string
+  orgId: string
+  userId: string
+  email: string
+  role: OrgRole
+  createdAt: string
+}
+
+export interface ForgotPasswordInput {
+  email: string
+}
+
+export interface ForgotPasswordResult {
+  ok: boolean
+  devToken?: string | null
+}
+
+export interface ResetPasswordInput {
+  token: string
+  newPassword: string
+}
+
+export interface AcceptInviteInput {
+  token: string
+  email: string
+  password?: string
+}
+
 // =============================================
 // Spending
 // =============================================
