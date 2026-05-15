@@ -19,6 +19,7 @@ class AuditLog(Base):
     entity_type: Mapped[str] = mapped_column(String(64), nullable=False)
     entity_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     details: Mapped[dict] = mapped_column(JSONB, default=dict)
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = ()

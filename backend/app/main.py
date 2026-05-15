@@ -8,6 +8,7 @@ from app.api.routers import (
     auth,
     customers,
     dashboard,
+    events,
     funding,
     ingest,
     integrations,
@@ -20,6 +21,8 @@ from app.api.routers import (
     spending,
 )
 from app.config import get_settings
+from app.middleware.request_id import RequestIdMiddleware
+from app.utils.errors import register_error_handlers
 
 settings = get_settings()
 
@@ -46,6 +49,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RequestIdMiddleware)
+register_error_handlers(app)
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(org.router, prefix="/org", tags=["org"])
@@ -60,6 +65,7 @@ app.include_router(integrations.router, prefix="/integrations", tags=["integrati
 app.include_router(search.router, prefix="/search", tags=["search"])
 app.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
+app.include_router(events.router, prefix="/events", tags=["events"])
 
 
 @app.get("/health")

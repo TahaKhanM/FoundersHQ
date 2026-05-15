@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.models import (  # noqa: F401
     audit,
     commitment,
+    events_outbox,
     financial_profile,
     funding,
     invoice,
