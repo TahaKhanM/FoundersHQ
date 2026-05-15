@@ -10,7 +10,6 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 
-
 # ---------------------------------------------------------------------------
 # Task 1 — model + round-trip
 # ---------------------------------------------------------------------------

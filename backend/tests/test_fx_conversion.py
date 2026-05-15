@@ -137,3 +137,67 @@ async def test_convert_amount_preserves_decimal_for_same_currency(async_session)
     )
     # Important: same-currency does NOT re-round; trailing digits survive.
     assert result == Decimal("100.123456")
+
+
+# ---------------------------------------------------------------------------
+# fx_rate_used wiring for ingest (task 6)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_lookup_fx_rate_used_returns_rate_for_cross_currency(async_session):
+    """Cross-currency lookup returns the historical rate."""
+    from app.services.ingestion.fx_attach import lookup_fx_rate_used
+
+    async_session.add(
+        FxRate(
+            date=date(2026, 1, 1),
+            source_currency="EUR",
+            target_currency="USD",
+            rate=Decimal("1.10"),
+        )
+    )
+    await async_session.flush()
+
+    rate = await lookup_fx_rate_used(
+        async_session,
+        base_currency="USD",
+        source_currency="EUR",
+        on_date=date(2026, 1, 1),
+    )
+    assert rate == Decimal("1.10")
+
+
+@pytest.mark.asyncio
+async def test_lookup_fx_rate_used_same_currency_returns_none(async_session):
+    """When source == base, no FX was applied so the column is None."""
+    from app.services.ingestion.fx_attach import lookup_fx_rate_used
+
+    rate = await lookup_fx_rate_used(
+        async_session,
+        base_currency="USD",
+        source_currency="USD",
+        on_date=date(2026, 1, 1),
+    )
+    assert rate is None
+
+
+@pytest.mark.asyncio
+async def test_lookup_fx_rate_used_missing_returns_none_with_warning(
+    async_session, caplog
+):
+    """No rate row + source != base -> return None (don't crash ingest)."""
+    import logging
+
+    from app.services.ingestion.fx_attach import lookup_fx_rate_used
+
+    caplog.set_level(logging.WARNING, logger="app.services.ingestion.fx_attach")
+    rate = await lookup_fx_rate_used(
+        async_session,
+        base_currency="USD",
+        source_currency="JPY",
+        on_date=date(2026, 1, 1),
+    )
+    assert rate is None
+    # A warning was logged so operators see the gap.
+    assert any("fx_rate_missing" in rec.message for rec in caplog.records)
