@@ -1,4 +1,7 @@
 """Runway router: forecast compute, get, scenarios, milestones, attribution."""
+from __future__ import annotations
+
+import logging
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -16,18 +19,29 @@ from app.api.schemas import (
     ScenarioCreate,
     WeeklyForecastRowDTO,
 )
-from app.deps import CurrentOrg, DbSession
+from app.deps import CurrentOrg, CurrentUser, DbSession
 from app.models import runway as rw_models
+from app.services.events import EventType, publish_event_best_effort
 from app.services.runway.forecast import run_forecast
+from app.utils.audit import record_audit
 from app.utils.dates import week_start
 
 router = APIRouter()
+log = logging.getLogger(__name__)
+
+
+def _safe_publish(org_id: str, event_type: EventType, payload: dict) -> None:
+    try:
+        publish_event_best_effort(org_id, event_type.value, payload)
+    except Exception:  # noqa: BLE001
+        log.exception("publish_event failed for %s", event_type.value)
 
 
 @router.post("/forecast/compute", response_model=RunwayForecastFullResponse)
 async def compute_forecast(
     body: RunwayForecastRequest,
     org: CurrentOrg,
+    user: CurrentUser,
     session: DbSession,
 ):
     today = date.today()
@@ -65,9 +79,28 @@ async def compute_forecast(
             flags=r.get("flags"),
             evidence_ids=r.get("evidence_ids"),
         ))
+    await record_audit(
+        session,
+        org_id=org.id,
+        user_id=user.id,
+        action="runway.forecast_computed",
+        entity_type="runway_forecast",
+        entity_id=fore.id,
+        details={"horizon_weeks": horizon, "crash_week_base": crash_base, "crash_week_pess": crash_pess},
+    )
     await session.commit()
     await session.refresh(fore)
     row_dtos = [WeeklyForecastRowDTO(week_start=r["week_start"], starting_cash=r["starting_cash"], inflows=r["inflows"], outflows=r["outflows"], ending_cash=r["ending_cash"], flags=r.get("flags"), evidence_ids=r.get("evidence_ids")) for r in rows]
+    _safe_publish(
+        org.id,
+        EventType.RUNWAY_FORECAST_COMPUTED,
+        {
+            "forecast_id": fore.id,
+            "horizon_weeks": horizon,
+            "crash_week_base": crash_base,
+            "crash_week_pess": crash_pess,
+        },
+    )
     return RunwayForecastFullResponse(
         forecast=RunwayForecastDTO.model_validate(fore),
         rows=row_dtos,
@@ -101,12 +134,27 @@ async def get_forecast(forecast_id: str, org: CurrentOrg, session: DbSession):
 
 
 @router.post("/scenarios")
-async def create_scenario(body: ScenarioCreate, org: CurrentOrg, session: DbSession):
+async def create_scenario(
+    body: ScenarioCreate, org: CurrentOrg, user: CurrentUser, session: DbSession
+):
     from app.models.base import gen_uuid
     s = rw_models.Scenario(id=gen_uuid(), org_id=org.id, name=body.name, params=body.params)
     session.add(s)
+    await session.flush()
+    await record_audit(
+        session,
+        org_id=org.id,
+        user_id=user.id,
+        action="runway.scenario_created",
+        entity_type="scenario",
+        entity_id=s.id,
+        details={"name": body.name},
+    )
     await session.commit()
     await session.refresh(s)
+    _safe_publish(
+        org.id, EventType.RUNWAY_SCENARIO_CREATED, {"scenario_id": s.id, "name": s.name}
+    )
     return {"id": s.id, "org_id": s.org_id, "name": s.name, "params": s.params}
 
 
@@ -122,7 +170,9 @@ async def list_milestones(org: CurrentOrg, session: DbSession):
 
 
 @router.post("/milestones", response_model=MilestoneDTO)
-async def create_milestone(body: MilestoneCreate, org: CurrentOrg, session: DbSession):
+async def create_milestone(
+    body: MilestoneCreate, org: CurrentOrg, user: CurrentUser, session: DbSession
+):
     from app.models.base import gen_uuid
     m = rw_models.Milestone(
         id=gen_uuid(),
@@ -133,13 +183,32 @@ async def create_milestone(body: MilestoneCreate, org: CurrentOrg, session: DbSe
         target_week_start=body.target_week_start,
     )
     session.add(m)
+    await session.flush()
+    await record_audit(
+        session,
+        org_id=org.id,
+        user_id=user.id,
+        action="runway.milestone_created",
+        entity_type="milestone",
+        entity_id=m.id,
+        details={"name": body.name, "target_type": body.target_type},
+    )
     await session.commit()
     await session.refresh(m)
+    _safe_publish(
+        org.id, EventType.RUNWAY_MILESTONE_CREATED, {"milestone_id": m.id, "name": m.name}
+    )
     return MilestoneDTO.model_validate(m)
 
 
 @router.patch("/milestones/{milestone_id}", response_model=MilestoneDTO)
-async def patch_milestone(milestone_id: str, body: MilestonePatch, org: CurrentOrg, session: DbSession):
+async def patch_milestone(
+    milestone_id: str,
+    body: MilestonePatch,
+    org: CurrentOrg,
+    user: CurrentUser,
+    session: DbSession,
+):
     result = await session.execute(
         select(rw_models.Milestone).where(
             rw_models.Milestone.id == milestone_id,
@@ -157,13 +226,26 @@ async def patch_milestone(milestone_id: str, body: MilestonePatch, org: CurrentO
         m.target_value = body.target_value
     if body.target_week_start is not None:
         m.target_week_start = body.target_week_start
+    await session.flush()
+    await record_audit(
+        session,
+        org_id=org.id,
+        user_id=user.id,
+        action="runway.milestone_updated",
+        entity_type="milestone",
+        entity_id=m.id,
+        details=body.model_dump(exclude_none=True, mode="json"),
+    )
     await session.commit()
     await session.refresh(m)
+    _safe_publish(org.id, EventType.RUNWAY_MILESTONE_UPDATED, {"milestone_id": m.id})
     return MilestoneDTO.model_validate(m)
 
 
 @router.delete("/milestones/{milestone_id}", status_code=204)
-async def delete_milestone(milestone_id: str, org: CurrentOrg, session: DbSession):
+async def delete_milestone(
+    milestone_id: str, org: CurrentOrg, user: CurrentUser, session: DbSession
+):
     result = await session.execute(
         select(rw_models.Milestone).where(
             rw_models.Milestone.id == milestone_id,
@@ -174,7 +256,19 @@ async def delete_milestone(milestone_id: str, org: CurrentOrg, session: DbSessio
     if not m:
         raise HTTPException(404, "Milestone not found")
     await session.delete(m)
+    await session.flush()
+    await record_audit(
+        session,
+        org_id=org.id,
+        user_id=user.id,
+        action="runway.milestone_deleted",
+        entity_type="milestone",
+        entity_id=milestone_id,
+    )
     await session.commit()
+    _safe_publish(
+        org.id, EventType.RUNWAY_MILESTONE_DELETED, {"milestone_id": milestone_id}
+    )
     return
 
 

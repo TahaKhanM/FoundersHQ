@@ -26,6 +26,7 @@ from app.models.llm import LLMExplanation
 from app.models.org import Membership
 from app.models.user import User
 from app.services.auth.tokens import generate_token
+from app.services.events import EventType
 from app.services.events import publish_event_best_effort as publish_event
 from app.utils.audit import record_audit
 
@@ -49,13 +50,24 @@ async def get_org(org: CurrentOrg):
 async def delete_org_data(
     body: OrgDataDeleteRequest,
     org: CurrentOrg,
+    user: CurrentUser,
     session: DbSession,
 ):
     if not body.confirm:
         raise HTTPException(status_code=400, detail="Set confirm=true to delete org data")
     await session.execute(delete(UserSavedOpportunity).where(UserSavedOpportunity.org_id == org.id))
     await session.execute(delete(LLMExplanation).where(LLMExplanation.org_id == org.id))
-    await session.execute(delete(AuditLog).where(AuditLog.org_id == org.id))
+    # Audit + event before we wipe the audit table itself so the operator
+    # action remains on the record (the wipe still removes prior rows).
+    await record_audit(
+        session,
+        org_id=org.id,
+        user_id=user.id,
+        action="org.data_purged",
+        entity_type="org",
+        entity_id=org.id,
+    )
+    await session.execute(delete(AuditLog).where(AuditLog.org_id == org.id, AuditLog.action != "org.data_purged"))
     await session.execute(delete(runway.Milestone).where(runway.Milestone.org_id == org.id))
     await session.execute(delete(runway.Scenario).where(runway.Scenario.org_id == org.id))
     await session.execute(delete(runway.ForecastRow).where(runway.ForecastRow.org_id == org.id))
@@ -68,6 +80,7 @@ async def delete_org_data(
     await session.execute(delete(transaction.Transaction).where(transaction.Transaction.org_id == org.id))
     await session.execute(delete(transaction.TransactionCategory).where(transaction.TransactionCategory.org_id == org.id))
     await session.execute(delete(transaction.BankAccount).where(transaction.BankAccount.org_id == org.id))
+    _safe_publish(org.id, EventType.ORG_DATA_PURGED.value, {"org_id": org.id})
     return
 
 
@@ -103,7 +116,7 @@ async def create_invitation(
         entity_id=inv.id,
         details={"email": body.email, "role": body.role},
     )
-    _safe_publish(org.id, "invitation.created", {"invitation_id": inv.id, "email": body.email})
+    _safe_publish(org.id, EventType.INVITATION_CREATED.value, {"invitation_id": inv.id, "email": body.email})
 
     settings = get_settings()
     dto = InvitationDTO.model_validate(inv)
@@ -153,7 +166,7 @@ async def revoke_invitation(
         entity_type="invitation",
         entity_id=inv.id,
     )
-    _safe_publish(org.id, "invitation.revoked", {"invitation_id": inv.id})
+    _safe_publish(org.id, EventType.INVITATION_REVOKED.value, {"invitation_id": inv.id})
     return
 
 
@@ -226,7 +239,7 @@ async def patch_member_role(
         entity_id=target.id,
         details={"from": old_role, "to": body.role},
     )
-    _safe_publish(org.id, "membership.role_changed", {"membership_id": target.id, "from": old_role, "to": body.role})
+    _safe_publish(org.id, EventType.MEMBERSHIP_ROLE_CHANGED.value, {"membership_id": target.id, "from": old_role, "to": body.role})
 
     return MembershipDTO(
         id=target.id, org_id=target.org_id, user_id=target.user_id,
@@ -269,5 +282,5 @@ async def remove_member(
         entity_type="membership",
         entity_id=membership_id,
     )
-    _safe_publish(org.id, "membership.removed", {"membership_id": membership_id})
+    _safe_publish(org.id, EventType.MEMBERSHIP_REMOVED.value, {"membership_id": membership_id})
     return

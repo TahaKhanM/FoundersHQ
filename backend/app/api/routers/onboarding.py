@@ -33,6 +33,7 @@ from app.api.schemas import (
 from app.deps import CurrentOrg, CurrentUser, DbSession, requires_role
 from app.models.org import Membership, Org, Persona
 from app.scripts.seed_dev_data import seed_org
+from app.services.events import EventType
 from app.services.events import publish_event_best_effort as publish_event
 from app.services.onboarding.state import (
     OnboardingCapture,
@@ -173,7 +174,7 @@ async def post_step(
         entity_id=org.id,
         details={"step": n, "capture": _capture_to_dto(result.capture).model_dump()},
     )
-    _safe_publish(org.id, "onboarding.step_completed", {"step": n})
+    _safe_publish(org.id, EventType.ONBOARDING_STEP_COMPLETED.value, {"step": n})
 
     return OnboardingStepResponse(
         step=result.next_step,
@@ -228,7 +229,7 @@ async def post_complete(
         entity_id=org.id,
         details={"capture": _capture_to_dto(capture).model_dump()},
     )
-    _safe_publish(org.id, "onboarding.completed", {"org_id": org.id})
+    _safe_publish(org.id, EventType.ONBOARDING_COMPLETED.value, {"org_id": org.id})
 
     return OnboardingCompleteResponse(
         completed_at=now,
@@ -262,7 +263,7 @@ async def post_seed_sample_data(
             "commitments_inserted": stats.commitments_inserted,
         },
     )
-    _safe_publish(org.id, "onboarding.sample_data_seeded", {"org_id": org.id})
+    _safe_publish(org.id, EventType.ONBOARDING_SAMPLE_DATA_SEEDED.value, {"org_id": org.id})
 
     return OnboardingSeedSampleResponse(
         transactions_inserted=stats.transactions_inserted,

@@ -21,7 +21,7 @@ from app.api.schemas import (
 from app.deps import CurrentOrg, CurrentUser, DbSession
 from app.models.notification import Notification
 from app.models.notification_preference import NotificationPreference
-from app.services.events import publish_event_best_effort
+from app.services.events import EventType, publish_event_best_effort
 from app.utils.audit import record_audit
 
 log = logging.getLogger(__name__)
@@ -213,6 +213,11 @@ async def update_preferences(
         details={"types": updated_types},
     )
     await session.commit()
+    _safe_publish(
+        org.id,
+        EventType.NOTIFICATION_PREFERENCE_UPDATED.value,
+        {"user_id": user.id, "types": updated_types},
+    )
 
     # Return the full preferences view.
     return await list_preferences(user, session)
@@ -254,7 +259,7 @@ async def mark_read(
     )
     await session.commit()
     await session.refresh(n)
-    _safe_publish(org.id, "notification.updated", {**_serialize(n), "status": "read"})
+    _safe_publish(org.id, EventType.NOTIFICATION_UPDATED.value, {**_serialize(n), "status": "read"})
     return NotificationDTO.model_validate(n)
 
 
@@ -281,7 +286,7 @@ async def mark_all_read(org: CurrentOrg, user: CurrentUser, session: DbSession):
         details={"count": len(items)},
     )
     await session.commit()
-    _safe_publish(org.id, "notification.updated", {"status": "read_all", "count": len(items)})
+    _safe_publish(org.id, EventType.NOTIFICATION_UPDATED.value, {"status": "read_all", "count": len(items)})
     return {"marked": len(items)}
 
 
@@ -302,7 +307,7 @@ async def archive_notification(
     )
     await session.commit()
     await session.refresh(n)
-    _safe_publish(org.id, "notification.updated", {**_serialize(n), "status": "archived"})
+    _safe_publish(org.id, EventType.NOTIFICATION_UPDATED.value, {**_serialize(n), "status": "archived"})
     return NotificationDTO.model_validate(n)
 
 
@@ -331,7 +336,7 @@ async def snooze_notification(
     await session.refresh(n)
     _safe_publish(
         org.id,
-        "notification.updated",
+        EventType.NOTIFICATION_UPDATED.value,
         {**_serialize(n), "status": "snoozed", "duration": body.duration},
     )
     return NotificationDTO.model_validate(n)

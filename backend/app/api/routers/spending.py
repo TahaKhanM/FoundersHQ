@@ -1,4 +1,7 @@
 """Spending router: metrics, transactions, categories, rules, commitments, alerts."""
+from __future__ import annotations
+
+import logging
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -19,9 +22,10 @@ from app.api.schemas import (
     TransactionCategoryPatch,
     TransactionDTO,
 )
-from app.deps import CurrentOrg, DbSession
+from app.deps import CurrentOrg, CurrentUser, DbSession
 from app.models import commitment as comm_models
 from app.models import transaction as txn_models
+from app.services.events import EventType, publish_event_best_effort
 from app.services.spending.alerts import spend_creep_alerts
 from app.services.spending.metrics import (
     buffer_ratio,
@@ -37,10 +41,20 @@ from app.services.spending.metrics import (
     total_inflow,
     total_outflow,
 )
+from app.utils.audit import record_audit
 from app.utils.dates import period_30d_end, period_90d_end
 from app.utils.pagination import paginate
 
 router = APIRouter()
+log = logging.getLogger(__name__)
+
+
+def _safe_publish(org_id: str, event_type: EventType, payload: dict) -> None:
+    """Best-effort publish wrapped so a broker outage can't fail the commit."""
+    try:
+        publish_event_best_effort(org_id, event_type.value, payload)
+    except Exception:  # noqa: BLE001
+        log.exception("publish_event failed for %s", event_type.value)
 
 
 @router.get("/metrics", response_model=SpendingMetricsDTO)
@@ -147,7 +161,13 @@ async def get_transaction(txn_id: str, org: CurrentOrg, session: DbSession):
 
 
 @router.patch("/transactions/{txn_id}", response_model=TransactionDTO)
-async def patch_transaction(txn_id: str, body: TransactionCategoryPatch, org: CurrentOrg, session: DbSession):
+async def patch_transaction(
+    txn_id: str,
+    body: TransactionCategoryPatch,
+    org: CurrentOrg,
+    user: CurrentUser,
+    session: DbSession,
+):
     result = await session.execute(
         select(txn_models.Transaction).where(
             txn_models.Transaction.id == txn_id,
@@ -159,8 +179,23 @@ async def patch_transaction(txn_id: str, body: TransactionCategoryPatch, org: Cu
         raise HTTPException(404, "Transaction not found")
     if body.category_id is not None:
         txn.category_id = body.category_id
+    await session.flush()
+    await record_audit(
+        session,
+        org_id=org.id,
+        user_id=user.id,
+        action="transaction.categorized",
+        entity_type="transaction",
+        entity_id=txn.id,
+        details={"category_id": body.category_id},
+    )
     await session.commit()
     await session.refresh(txn)
+    _safe_publish(
+        org.id,
+        EventType.TRANSACTION_CATEGORIZED,
+        {"transaction_id": txn.id, "category_id": txn.category_id},
+    )
     return TransactionDTO.model_validate(txn)
 
 
@@ -181,7 +216,12 @@ async def list_rules(org: CurrentOrg, session: DbSession):
 
 
 @router.post("/rules", response_model=CategorizationRuleDTO)
-async def create_rule(body: CategorizationRuleCreate, org: CurrentOrg, session: DbSession):
+async def create_rule(
+    body: CategorizationRuleCreate,
+    org: CurrentOrg,
+    user: CurrentUser,
+    session: DbSession,
+):
     from app.models.base import gen_uuid
     r = txn_models.CategorizationRule(
         id=gen_uuid(),
@@ -191,13 +231,34 @@ async def create_rule(body: CategorizationRuleCreate, org: CurrentOrg, session: 
         category_id=body.category_id,
     )
     session.add(r)
+    await session.flush()
+    await record_audit(
+        session,
+        org_id=org.id,
+        user_id=user.id,
+        action="categorization_rule.created",
+        entity_type="categorization_rule",
+        entity_id=r.id,
+        details={"pattern": body.pattern, "match_type": body.match_type},
+    )
     await session.commit()
     await session.refresh(r)
+    _safe_publish(
+        org.id,
+        EventType.CATEGORIZATION_RULE_CREATED,
+        {"rule_id": r.id, "pattern": r.pattern},
+    )
     return CategorizationRuleDTO.model_validate(r)
 
 
 @router.patch("/rules/{rule_id}", response_model=CategorizationRuleDTO)
-async def patch_rule(rule_id: str, body: CategorizationRulePatch, org: CurrentOrg, session: DbSession):
+async def patch_rule(
+    rule_id: str,
+    body: CategorizationRulePatch,
+    org: CurrentOrg,
+    user: CurrentUser,
+    session: DbSession,
+):
     result = await session.execute(
         select(txn_models.CategorizationRule).where(
             txn_models.CategorizationRule.id == rule_id,
@@ -215,13 +276,28 @@ async def patch_rule(rule_id: str, body: CategorizationRulePatch, org: CurrentOr
         r.category_id = body.category_id
     if body.enabled is not None:
         r.enabled = body.enabled
+    await session.flush()
+    await record_audit(
+        session,
+        org_id=org.id,
+        user_id=user.id,
+        action="categorization_rule.updated",
+        entity_type="categorization_rule",
+        entity_id=r.id,
+        details=body.model_dump(exclude_none=True),
+    )
     await session.commit()
     await session.refresh(r)
+    _safe_publish(
+        org.id, EventType.CATEGORIZATION_RULE_UPDATED, {"rule_id": r.id}
+    )
     return CategorizationRuleDTO.model_validate(r)
 
 
 @router.delete("/rules/{rule_id}", status_code=204)
-async def delete_rule(rule_id: str, org: CurrentOrg, session: DbSession):
+async def delete_rule(
+    rule_id: str, org: CurrentOrg, user: CurrentUser, session: DbSession
+):
     result = await session.execute(
         select(txn_models.CategorizationRule).where(
             txn_models.CategorizationRule.id == rule_id,
@@ -232,7 +308,19 @@ async def delete_rule(rule_id: str, org: CurrentOrg, session: DbSession):
     if not r:
         raise HTTPException(404, "Rule not found")
     await session.delete(r)
+    await session.flush()
+    await record_audit(
+        session,
+        org_id=org.id,
+        user_id=user.id,
+        action="categorization_rule.deleted",
+        entity_type="categorization_rule",
+        entity_id=rule_id,
+    )
     await session.commit()
+    _safe_publish(
+        org.id, EventType.CATEGORIZATION_RULE_DELETED, {"rule_id": rule_id}
+    )
     return
 
 
@@ -245,7 +333,13 @@ async def list_commitments(org: CurrentOrg, session: DbSession):
 
 
 @router.patch("/commitments/{commitment_id}", response_model=CommitmentDTO)
-async def patch_commitment(commitment_id: str, body: CommitmentPatch, org: CurrentOrg, session: DbSession):
+async def patch_commitment(
+    commitment_id: str,
+    body: CommitmentPatch,
+    org: CurrentOrg,
+    user: CurrentUser,
+    session: DbSession,
+):
     result = await session.execute(
         select(comm_models.Commitment).where(
             comm_models.Commitment.id == commitment_id,
@@ -257,8 +351,19 @@ async def patch_commitment(commitment_id: str, body: CommitmentPatch, org: Curre
         raise HTTPException(404, "Commitment not found")
     if body.enabled is not None:
         c.enabled = body.enabled
+    await session.flush()
+    await record_audit(
+        session,
+        org_id=org.id,
+        user_id=user.id,
+        action="commitment.updated",
+        entity_type="commitment",
+        entity_id=c.id,
+        details=body.model_dump(exclude_none=True),
+    )
     await session.commit()
     await session.refresh(c)
+    _safe_publish(org.id, EventType.COMMITMENT_UPDATED, {"commitment_id": c.id})
     return CommitmentDTO.model_validate(c)
 
 

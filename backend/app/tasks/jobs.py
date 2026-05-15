@@ -1,16 +1,26 @@
 """Celery tasks: imports, recompute, ingest. All idempotent."""
 import hashlib
+import itertools
+import json
+import logging
+import time
 from datetime import date
 from decimal import Decimal
+from typing import Any
 from uuid import uuid4
 
+import redis as sync_redis
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 from app.config import get_settings
 from app.models import audit, commitment, funding, invoice, org, transaction
+from app.models.events_outbox import EventOutbox
+from app.services.events import EventType
 from app.services.ingestion.fx_attach import lookup_fx_rate_used_sync
 from app.tasks.celery_app import celery_app
+
+log = logging.getLogger(__name__)
 
 # Sync session for Celery (workers use sync DB)
 engine = create_engine(get_settings().database_url_sync)
@@ -19,6 +29,87 @@ SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 def get_sync_session():
     return SessionLocal()
+
+
+# Sync Redis singleton for the worker. Lazy so missing Redis doesn't break
+# import-time. Each chunked progress publish writes an outbox row first
+# (durable) then publishes to the per-org channel. Failures are logged but
+# never raised — the import itself must not roll back on a Redis outage.
+_sync_redis_client: sync_redis.Redis | None = None
+_worker_seq_counter = itertools.count()
+
+
+def _get_sync_redis() -> sync_redis.Redis | None:
+    global _sync_redis_client
+    if _sync_redis_client is None:
+        try:
+            _sync_redis_client = sync_redis.from_url(
+                get_settings().redis_url, encoding="utf-8", decode_responses=False
+            )
+        except Exception:  # noqa: BLE001
+            log.exception("sync redis connect failed")
+            return None
+    return _sync_redis_client
+
+
+def _worker_seq() -> str:
+    """Worker-side seq generator. Same format as the async publisher."""
+    return f"{int(time.time() * 1000):015d}-{next(_worker_seq_counter):09d}"
+
+
+def _publish_progress(
+    session,
+    org_id: str,
+    *,
+    job_id: str,
+    kind: str,
+    processed: int,
+    total: int,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    """Write ``ingest.job_progress`` to the outbox and Redis. Durable.
+
+    Called once per chunk during a CSV import. Either side failing must
+    not abort the import; we log + continue.
+    """
+    payload: dict[str, Any] = {
+        "job_id": job_id,
+        "kind": kind,
+        "processed": processed,
+        "total": total,
+    }
+    if extra:
+        payload.update(extra)
+    try:
+        seq = _worker_seq()
+        session.add(
+            EventOutbox(
+                org_id=str(org_id),
+                seq=seq,
+                type=EventType.INGEST_JOB_PROGRESS.value,
+                payload=payload,
+            )
+        )
+        session.flush()
+    except Exception:  # noqa: BLE001
+        log.exception("outbox write failed for ingest.job_progress")
+        return
+
+    r = _get_sync_redis()
+    if r is None:
+        return
+    try:
+        msg = json.dumps(
+            {
+                "seq": seq,
+                "type": EventType.INGEST_JOB_PROGRESS.value,
+                "payload": payload,
+                "org_id": str(org_id),
+            }
+        )
+        r.publish(f"events:{org_id}", msg)
+    except Exception:  # noqa: BLE001
+        log.exception("redis publish failed for ingest.job_progress")
 
 
 @celery_app.task(bind=True)
@@ -53,7 +144,12 @@ def import_transactions_csv(self, org_id: str, file_content_base64: str | None =
         skipped = 0
         errors = []
         fx_missing_count = 0
-        for r in rows:
+        total = len(rows)
+        # Chunk size for progress events. We emit one per chunk regardless
+        # of how many rows succeeded inside it — the frontend cares about
+        # "how far along" not "how many succeeded".
+        chunk_size = max(1, total // 20) if total > 20 else max(1, total)
+        for idx, r in enumerate(rows):
             try:
                 txn_date = r.get("txn_date")
                 if isinstance(txn_date, str):
@@ -96,6 +192,18 @@ def import_transactions_csv(self, org_id: str, file_content_base64: str | None =
                 imported += 1
             except Exception as e:
                 errors.append(str(e))
+            # Emit progress every chunk_size rows (and at end).
+            processed = idx + 1
+            if processed % chunk_size == 0 or processed == total:
+                _publish_progress(
+                    session,
+                    org_id,
+                    job_id=job_id,
+                    kind="transactions_csv",
+                    processed=processed,
+                    total=total,
+                    extra={"imported": imported, "skipped": skipped},
+                )
         if fx_missing_count:
             errors.append(
                 f"{fx_missing_count} rows imported with unknown FX rate; fx_rate_used left NULL"
@@ -143,7 +251,9 @@ def import_invoices_csv(self, org_id: str, file_content_base64: str | None = Non
         imported = 0
         errors = []
         fx_missing_count = 0
-        for r in rows:
+        total = len(rows)
+        chunk_size = max(1, total // 20) if total > 20 else max(1, total)
+        for idx, r in enumerate(rows):
             try:
                 from dateutil.parser import parse as date_parse
                 issue_date = date_parse(r.get("issue_date", "2020-01-01")).date()
@@ -198,6 +308,17 @@ def import_invoices_csv(self, org_id: str, file_content_base64: str | None = Non
                 imported += 1
             except Exception as e:
                 errors.append(str(e))
+            processed = idx + 1
+            if processed % chunk_size == 0 or processed == total:
+                _publish_progress(
+                    session,
+                    org_id,
+                    job_id=job_id,
+                    kind="invoices_csv",
+                    processed=processed,
+                    total=total,
+                    extra={"imported": imported},
+                )
         if fx_missing_count:
             errors.append(
                 f"{fx_missing_count} invoices imported with unknown FX rate; fx_rate_used left NULL"

@@ -1,4 +1,8 @@
 """Funding router: routes rank, opportunities, save, timeline, improvements."""
+from __future__ import annotations
+
+import logging
+
 from fastapi import APIRouter
 from sqlalchemy import func, select
 
@@ -12,12 +16,22 @@ from app.api.schemas import (
 )
 from app.deps import CurrentOrg, CurrentUser, DbSession
 from app.models import funding as fund_models
+from app.services.events import EventType, publish_event_best_effort
 from app.services.funding.improvements import improvement_items
 from app.services.funding.scoring import score_route
 from app.services.funding.timeline import rationale_for_item, timeline_sort_key
+from app.utils.audit import record_audit
 from app.utils.pagination import paginate
 
 router = APIRouter()
+log = logging.getLogger(__name__)
+
+
+def _safe_publish(org_id: str, event_type: EventType, payload: dict) -> None:
+    try:
+        publish_event_best_effort(org_id, event_type.value, payload)
+    except Exception:  # noqa: BLE001
+        log.exception("publish_event failed for %s", event_type.value)
 
 
 @router.get("/routes/rank", response_model=list[FundingRouteDTO])
@@ -103,7 +117,22 @@ async def save_opportunity(body: FundingOpportunitySaveRequest, org: CurrentOrg,
             status=body.status,
             notes=body.notes,
         ))
+    await session.flush()
+    await record_audit(
+        session,
+        org_id=org.id,
+        user_id=user.id,
+        action="funding.opportunity_saved",
+        entity_type="funding_opportunity",
+        entity_id=body.opportunity_id,
+        details={"status": body.status},
+    )
     await session.commit()
+    _safe_publish(
+        org.id,
+        EventType.FUNDING_OPPORTUNITY_SAVED,
+        {"opportunity_id": body.opportunity_id, "status": body.status},
+    )
     return {"status": "saved"}
 
 
