@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Download } from "lucide-react"
 import { type ColumnDef } from "@tanstack/react-table"
@@ -66,6 +66,15 @@ function compactJson(obj: Record<string, unknown>): string {
 }
 
 export default function AuditLogPage() {
+  // useSearchParams() requires a Suspense boundary for static prerender.
+  return (
+    <Suspense fallback={null}>
+      <AuditLogPageInner />
+    </Suspense>
+  )
+}
+
+function AuditLogPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { toast } = useToast()

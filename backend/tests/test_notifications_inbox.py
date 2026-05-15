@@ -369,11 +369,14 @@ async def test_generator_publishes_notification_created(client, async_session):
 
     with Session(sync_engine) as sync_session:
         # Create an org row in the sync DB so the FK is satisfied.
+        # base_currency + fiscal_year_start_month are NOT NULL (phase 1.B);
+        # supply them explicitly since raw SQL bypasses ORM defaults.
         sync_session.execute(
             __import__("sqlalchemy").text(
-                "INSERT INTO orgs (id, name) VALUES (:id, :name)"
+                "INSERT INTO orgs (id, name, base_currency, fiscal_year_start_month) "
+                "VALUES (:id, :name, :base_currency, :fiscal_year_start_month)"
             ),
-            {"id": org_id, "name": "Test"},
+            {"id": org_id, "name": "Test", "base_currency": "USD", "fiscal_year_start_month": 1},
         )
         sync_session.commit()
         rows = generate_runway_notifications(

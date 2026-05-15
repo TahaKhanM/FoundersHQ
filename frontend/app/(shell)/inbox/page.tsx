@@ -1,7 +1,7 @@
 "use client"
 
 import { useRouter, useSearchParams } from "next/navigation"
-import { useCallback } from "react"
+import { Suspense, useCallback } from "react"
 
 import { Card, CardContent } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -45,6 +45,15 @@ const TAB_EMPTY: Record<NotificationStatus, { title: string; description: string
 }
 
 export default function InboxPage() {
+  // useSearchParams() requires a Suspense boundary for static prerender.
+  return (
+    <Suspense fallback={null}>
+      <InboxPageInner />
+    </Suspense>
+  )
+}
+
+function InboxPageInner() {
   const router = useRouter()
   const params = useSearchParams()
   const rawTab = params.get("tab")
