@@ -134,5 +134,7 @@ coverage/
 # Claude Code (local-only)
 ############################
 .claude/settings.local.json
-.foundershq-state.json
+.claude/worktrees/
 .claude/.DS_Store
+.foundershq-state.json
+.playwright-mcp/
