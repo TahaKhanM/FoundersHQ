@@ -4,10 +4,11 @@ from uuid import uuid4
 
 from sqlalchemy import MetaData
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 
 from app.config import get_settings
+from app.utils.org_scope import register_org_scope_listener
 
 convention = {
     "ix": "ix_%(column_0_label)s",
@@ -40,6 +41,12 @@ async_session_factory = async_sessionmaker(
     autocommit=False,
     autoflush=False,
 )
+
+
+# Dev/test invariant: any new row whose table has `org_id` must have it set
+# before the session flushes. Registered on the sync Session because
+# `before_flush` fires there even when driven by an AsyncSession.
+register_org_scope_listener(Session)
 
 
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
