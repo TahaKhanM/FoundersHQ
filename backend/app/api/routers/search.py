@@ -53,6 +53,20 @@ def _recency_score(d: date | None, reference: date) -> float:
     return 0.3
 
 
+def search_insights(
+    org_id: str,  # noqa: ARG001 - reserved for 2.F implementation
+    query_lower: str,  # noqa: ARG001
+) -> list[SearchResultDTO]:
+    """Insights search stub.
+
+    Phase 2.F adds the AI-generated insights index. Until then this returns an
+    empty list so the channel is open and the global ``/search`` endpoint can
+    fold insights in once the index exists. Deterministic by definition: it
+    returns the same value for every input.
+    """
+    return []
+
+
 @router.get("", response_model=list[SearchResultDTO])
 async def search(
     org: CurrentOrg,
@@ -265,6 +279,10 @@ async def search(
                 score=70.0,
                 match_reason="text_match",
             ))
+
+    # Insights channel — populated by phase 2.F. The stub keeps the wiring
+    # in place so the frontend group renders unchanged when insights ship.
+    results.extend(search_insights(org.id, query_lower))
 
     results.sort(key=lambda r: (-r.score, r.type, r.id))
     return results[:limit]
