@@ -57,6 +57,10 @@ class OrgDTO(BaseModel):
     id: str
     name: str
     created_at: datetime | None = None
+    # Phase 2.C — the base currency the frontend uses for the
+    # ``BaseCurrencyProvider``. Defaults to "USD" at org creation time.
+    base_currency: str = "USD"
+    fiscal_year_start_month: int = 1
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -716,6 +720,39 @@ class InvoiceParsingConfirmRequest(BaseModel):
     currency: str
     po_number: str | None = None
     notes: str | None = None
+
+
+# ---- FX rates (phase 2.C) ----
+class FxRateDTO(BaseModel):
+    """One snapshot row from the ``fx_rates`` table.
+
+    ``rate`` is serialised as a string-form Decimal so JS callers don't
+    lose precision on exotic-pair micro-rates.
+    """
+
+    id: str
+    date: date
+    source_currency: str
+    target_currency: str
+    rate: Decimal
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FxRateIngestRow(BaseModel):
+    date: date
+    source_currency: str = Field(..., min_length=3, max_length=8)
+    target_currency: str = Field(..., min_length=3, max_length=8)
+    rate: Decimal = Field(..., gt=Decimal("0"))
+
+
+class FxRateBulkIngestRequest(BaseModel):
+    rows: list[FxRateIngestRow] = Field(..., min_length=1, max_length=2000)
+
+
+class FxRateUpsertResult(BaseModel):
+    inserted: int
+    updated: int
 
 
 # ---- Audit log ----
