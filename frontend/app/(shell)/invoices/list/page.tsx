@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { Suspense, useState, useEffect } from "react"
 import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -23,6 +23,15 @@ const statusColors: Record<string, string> = {
 }
 
 export default function InvoiceListPage() {
+  // useSearchParams() requires a Suspense boundary for static prerender.
+  return (
+    <Suspense fallback={null}>
+      <InvoiceListPageInner />
+    </Suspense>
+  )
+}
+
+function InvoiceListPageInner() {
   const searchParams = useSearchParams()
   const openInvoiceId = searchParams.get("openInvoiceId")
   const [statusFilter, setStatusFilter] = useState<string>("")

@@ -17,19 +17,19 @@ import type {
   CommitmentDTO,
 } from "./types"
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type BackendSpendingMetrics = Record<string, any>
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type BackendTransaction = Record<string, any>
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type BackendInvoice = Record<string, any>
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type BackendCustomer = Record<string, any>
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type BackendAlert = Record<string, any>
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type BackendDashboardMetrics = Record<string, any>
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type BackendPaginated = Record<string, any>
 
 export function mapSpendingMetrics(raw: BackendSpendingMetrics): SpendingMetricsDTO {
@@ -162,7 +162,7 @@ export function mapCustomer(raw: BackendCustomer): CustomerDTO {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export function mapCategory(raw: Record<string, any>): CategoryDTO {
   return {
     categoryId: String(raw.id ?? raw.categoryId ?? ""),
@@ -170,7 +170,7 @@ export function mapCategory(raw: Record<string, any>): CategoryDTO {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export function mapRule(raw: Record<string, any>): CategorizationRuleDTO {
   return {
     ruleId: String(raw.id ?? raw.ruleId ?? ""),
@@ -182,7 +182,7 @@ export function mapRule(raw: Record<string, any>): CategorizationRuleDTO {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export function mapCommitment(raw: Record<string, any>): CommitmentDTO {
   return {
     commitmentId: String(raw.id ?? raw.commitmentId ?? ""),

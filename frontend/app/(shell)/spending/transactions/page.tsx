@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { Suspense, useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -19,6 +19,15 @@ import { Search, ChevronLeft, ChevronRight, Plus } from "lucide-react"
 import { useSearchParams } from "next/navigation"
 
 export default function TransactionsPage() {
+  // useSearchParams() requires a Suspense boundary for static prerender.
+  return (
+    <Suspense fallback={null}>
+      <TransactionsPageInner />
+    </Suspense>
+  )
+}
+
+function TransactionsPageInner() {
   const searchParams = useSearchParams()
   const openTxnId = searchParams.get("openTxnId")
   const [page, setPage] = useState(1)
