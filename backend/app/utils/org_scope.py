@@ -33,12 +33,17 @@ def _missing_org_id(instance: Any) -> bool:
     return getattr(instance, "org_id", None) is None
 
 
+# Track which session classes already have the listener wired so repeated
+# imports during test setup don't stack duplicate handlers.
+_REGISTERED: set[type] = set()
+
+
 def register_org_scope_listener(session_class: type) -> None:
     """Install the ``before_flush`` listener on ``session_class``.
 
     Idempotent: calling twice does not register two listeners.
     """
-    if getattr(session_class, "_org_scope_listener_registered", False):
+    if session_class in _REGISTERED:
         return
 
     raise_on_violation = os.environ.get("ENV", "dev") != "prod"
@@ -54,4 +59,4 @@ def register_org_scope_listener(session_class: type) -> None:
                     raise OrgScopeViolation(msg)
                 logger.warning("org_scope_violation: %s", msg)
 
-    session_class._org_scope_listener_registered = True
+    _REGISTERED.add(session_class)

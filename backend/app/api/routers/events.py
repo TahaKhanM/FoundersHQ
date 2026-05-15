@@ -1,7 +1,7 @@
 """SSE endpoint per org + replay-since endpoint for catch-up."""
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import redis.asyncio as aioredis
 from fastapi import APIRouter, Query
@@ -11,7 +11,7 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.deps import CurrentOrg, DbSession
 from app.models.events_outbox import EventOutbox
-from app.services.events.sse import sse_stream
+from app.services.events.sse import RedisLike, sse_stream
 
 router = APIRouter()
 
@@ -26,7 +26,13 @@ def _get_redis() -> aioredis.Redis:
 async def events_stream(org: CurrentOrg) -> StreamingResponse:
     """Server-Sent Events stream for the caller's org."""
     redis = _get_redis()
-    return StreamingResponse(sse_stream(redis, org.id), media_type="text/event-stream")
+    # The real Redis client has a wider pubsub() signature than our Protocol
+    # advertises; cast tells mypy it satisfies the structural contract we
+    # actually use (subscribe/unsubscribe/get_message/close).
+    return StreamingResponse(
+        sse_stream(cast(RedisLike, redis), org.id),
+        media_type="text/event-stream",
+    )
 
 
 @router.get("/replay")
