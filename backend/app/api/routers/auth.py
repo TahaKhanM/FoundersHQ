@@ -31,7 +31,7 @@ from app.services.auth.tokens import (
     consume_reset_token,
     generate_token,
 )
-from app.services.events import publish_event
+from app.services.events import publish_event_best_effort as publish_event
 from app.utils.audit import record_audit
 from app.utils.hashing import hash_password, verify_password
 from app.utils.security import create_access_token

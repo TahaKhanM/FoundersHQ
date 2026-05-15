@@ -26,7 +26,7 @@ from app.models.llm import LLMExplanation
 from app.models.org import Membership
 from app.models.user import User
 from app.services.auth.tokens import generate_token
-from app.services.events import publish_event
+from app.services.events import publish_event_best_effort as publish_event
 from app.utils.audit import record_audit
 
 router = APIRouter()
