@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.api.routers import auth, org, ingest, spending, invoices, runway, funding, llm, customers, integrations, search, notifications, dashboard
+from app.api.routers import auth, org, ingest, spending, invoices, runway, funding, llm, customers, integrations, search, notifications, dashboard, events
 from app.middleware.request_id import RequestIdMiddleware
 from app.utils.errors import register_error_handlers
 
@@ -50,6 +50,7 @@ app.include_router(integrations.router, prefix="/integrations", tags=["integrati
 app.include_router(search.router, prefix="/search", tags=["search"])
 app.include_router(notifications.router, prefix="/notifications", tags=["notifications"])
 app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
+app.include_router(events.router, prefix="/events", tags=["events"])
 
 
 @app.get("/health")
