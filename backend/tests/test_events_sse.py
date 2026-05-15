@@ -165,31 +165,30 @@ async def test_sse_delivers_events_after_subscription(
     try:
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
-            async with client.stream("GET", "/events") as resp:
-                assert resp.status_code == 200
+        ) as client, client.stream("GET", "/events") as resp:
+            assert resp.status_code == 200
 
-                async def emit() -> None:
-                    await asyncio.sleep(0.1)
-                    await publish_event(
-                        async_session,
-                        redis=redis,
-                        org_id=seeded_org.id,
-                        type="ping",
-                        payload={"ok": True},
-                    )
-                    await async_session.commit()
+            async def emit() -> None:
+                await asyncio.sleep(0.1)
+                await publish_event(
+                    async_session,
+                    redis=redis,
+                    org_id=seeded_org.id,
+                    type="ping",
+                    payload={"ok": True},
+                )
+                await async_session.commit()
 
-                asyncio.create_task(emit())
+            asyncio.create_task(emit())
 
-                got_event = False
-                async for line in resp.aiter_lines():
-                    if line.startswith("data:"):
-                        msg = json.loads(line[5:].strip())
-                        if msg.get("type") == "ping":
-                            got_event = True
-                            break
-                assert got_event
+            got_event = False
+            async for line in resp.aiter_lines():
+                if line.startswith("data:"):
+                    msg = json.loads(line[5:].strip())
+                    if msg.get("type") == "ping":
+                        got_event = True
+                        break
+            assert got_event
     finally:
         _clear_overrides()
         await redis.aclose()

@@ -1,6 +1,7 @@
 """Shared pytest fixtures."""
 from __future__ import annotations
 
+import contextlib
 from collections.abc import AsyncGenerator
 from uuid import uuid4
 
@@ -53,10 +54,8 @@ async def async_session() -> AsyncGenerator[AsyncSession, None]:
         user,
     )
     # `events_outbox` is added in Task 5; import lazily so earlier tasks pass.
-    try:
+    with contextlib.suppress(ImportError):
         from app.models import events_outbox  # noqa: F401
-    except ImportError:
-        pass
 
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
     async with engine.begin() as conn:
