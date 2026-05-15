@@ -1,7 +1,7 @@
 """Password reset: model + API round-trip."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
@@ -12,7 +12,6 @@ from app.models.password_reset import PasswordResetToken
 from app.models.user import User
 from app.services.auth.tokens import generate_token, hash_token
 from app.services.events import drain_events
-from app.utils.hashing import verify_password
 
 
 @pytest.mark.asyncio
@@ -26,7 +25,7 @@ async def test_password_reset_model_persists_and_hashes(async_session):
         id=str(uuid4()),
         user_id=user.id,
         token_hash=token_hash,
-        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
     )
     async_session.add(prt)
     await async_session.commit()

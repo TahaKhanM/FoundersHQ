@@ -1,11 +1,10 @@
 """Invitations: model + tokens + API round-trip."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-import pytest_asyncio
 from sqlalchemy import select
 
 from app.models.invitation import Invitation
@@ -36,7 +35,7 @@ async def test_invitation_model_persists_and_indexes_org_id(async_session):
         role="admin",
         token_hash=token_hash,
         created_by_user_id=inviter.id,
-        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+        expires_at=datetime.now(UTC) + timedelta(days=7),
     )
     async_session.add(inv)
     await async_session.commit()
@@ -63,7 +62,7 @@ async def test_verify_invitation_token_happy(async_session):
     inv = Invitation(
         id=str(uuid4()), org_id=org.id, email="x@ex.com", role="admin",
         token_hash=token_hash, created_by_user_id=inviter.id,
-        expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+        expires_at=datetime.now(UTC) + timedelta(days=1),
     )
     async_session.add(inv)
     await async_session.commit()
@@ -84,7 +83,7 @@ async def test_verify_invitation_token_expired_returns_none(async_session):
     inv = Invitation(
         id=str(uuid4()), org_id=org.id, email="x@ex.com", role="admin",
         token_hash=token_hash, created_by_user_id=inviter.id,
-        expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),
+        expires_at=datetime.now(UTC) - timedelta(seconds=1),
     )
     async_session.add(inv)
     await async_session.commit()
@@ -103,7 +102,7 @@ async def test_consume_invitation_token_marks_accepted_and_blocks_reuse(async_se
     inv = Invitation(
         id=str(uuid4()), org_id=org.id, email="x@ex.com", role="admin",
         token_hash=token_hash, created_by_user_id=inviter.id,
-        expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+        expires_at=datetime.now(UTC) + timedelta(days=1),
     )
     async_session.add(inv)
     await async_session.commit()
@@ -175,7 +174,7 @@ async def _fetch_org_id(client, token: str) -> str:
 async def test_accept_invite_creates_user_and_membership(client):
     owner = _register(client, email=f"o-{uuid4().hex[:6]}@ex.com")
     owner_token = owner["access_token"]
-    org_id = await _fetch_org_id(client, owner_token)
+    await _fetch_org_id(client, owner_token)  # warm the org row
 
     invite_email = f"new-{uuid4().hex[:6]}@ex.com"
     r = client.post(

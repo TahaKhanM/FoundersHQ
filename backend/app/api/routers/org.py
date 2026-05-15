@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import and_, delete, select
@@ -68,7 +68,7 @@ async def delete_org_data(
     await session.execute(delete(transaction.Transaction).where(transaction.Transaction.org_id == org.id))
     await session.execute(delete(transaction.TransactionCategory).where(transaction.TransactionCategory.org_id == org.id))
     await session.execute(delete(transaction.BankAccount).where(transaction.BankAccount.org_id == org.id))
-    return None
+    return
 
 
 # ---- Phase 1.A: invitations (admin/owner only) ----
@@ -89,7 +89,7 @@ async def create_invitation(
         role=body.role,
         token_hash=token_hash,
         created_by_user_id=user.id,
-        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+        expires_at=datetime.now(UTC) + timedelta(days=7),
     )
     session.add(inv)
     await session.flush()
@@ -142,7 +142,7 @@ async def revoke_invitation(
     if inv is None:
         raise HTTPException(status_code=404, detail={"code": "not_found"})
     if inv.revoked_at is None:
-        inv.revoked_at = datetime.now(timezone.utc)
+        inv.revoked_at = datetime.now(UTC)
         await session.flush()
 
     await record_audit(
@@ -154,7 +154,7 @@ async def revoke_invitation(
         entity_id=inv.id,
     )
     _safe_publish(org.id, "invitation.revoked", {"invitation_id": inv.id})
-    return None
+    return
 
 
 # ---- Phase 1.A: members ----
@@ -270,4 +270,4 @@ async def remove_member(
         entity_id=membership_id,
     )
     _safe_publish(org.id, "membership.removed", {"membership_id": membership_id})
-    return None
+    return

@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import contextlib
+import uuid as _uuid_pkg
 from collections.abc import AsyncGenerator
 from uuid import uuid4
 
+import pytest
 import pytest_asyncio
 from sqlalchemy import JSON, String
 from sqlalchemy.dialects.postgresql import JSONB
@@ -33,40 +35,84 @@ def _compile_uuid_sqlite(type_, compiler, **kw):  # noqa: ANN001, ANN202
     return compiler.visit_VARCHAR(String(36), **kw)
 
 
-@pytest_asyncio.fixture
-async def async_session() -> AsyncGenerator[AsyncSession, None]:
-    """Async SQLAlchemy session against an in-memory SQLite DB.
+# Production code occasionally compares against a real ``uuid.UUID`` instance
+# (e.g. ``where(User.id == UUID(user_id))`` in deps.py); the stock SQLite
+# bind processor for PG_UUID(as_uuid=False) only knows strings. Coerce UUID
+# objects to their canonical string form before binding.
+_original_bind_processor = PG_UUID.bind_processor
 
-    A fresh engine + schema per test keeps tests isolated.
-    """
-    # Import all models so Base.metadata is populated.
+
+def _uuid_bind_processor_patch(self, dialect):  # noqa: ANN001
+    inner = _original_bind_processor(self, dialect)
+    if inner is None:
+        def _bind(value):
+            if isinstance(value, _uuid_pkg.UUID):
+                return str(value)
+            return value
+        return _bind
+
+    def _bind(value):
+        if isinstance(value, _uuid_pkg.UUID):
+            value = str(value)
+        return inner(value)
+    return _bind
+
+
+PG_UUID.bind_processor = _uuid_bind_processor_patch  # type: ignore[assignment]
+
+
+def _import_all_models() -> None:
+    """Populate Base.metadata before create_all."""
     from app.models import (  # noqa: F401
         audit,
         commitment,
         financial_profile,
         funding,
+        invitation,
         invoice,
         llm,
         notification,
         org,
+        password_reset,
         runway,
         transaction,
         user,
     )
-    # `events_outbox` is added in Task 5; import lazily so earlier tasks pass.
     with contextlib.suppress(ImportError):
         from app.models import events_outbox  # noqa: F401
 
+
+@pytest_asyncio.fixture
+async def session_factory():
+    """An async_sessionmaker bound to a fresh in-memory SQLite engine.
+
+    Tests that need to construct their own short-lived sessions (e.g. when
+    overriding a FastAPI dep with a session that auto-commits per request)
+    use this factory; the simpler `async_session` fixture yields a single
+    session for the whole test.
+    """
+    _import_all_models()
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    try:
+        yield factory
+    finally:
+        await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def async_session(session_factory) -> AsyncGenerator[AsyncSession, None]:
+    """Async SQLAlchemy session against an in-memory SQLite DB.
+
+    A fresh engine + schema per test keeps tests isolated.
+    """
     async with session_factory() as session:
         try:
             yield session
         finally:
             await session.close()
-    await engine.dispose()
 
 
 @pytest_asyncio.fixture
@@ -115,3 +161,29 @@ class FakeRedis:
 @pytest_asyncio.fixture
 async def fake_redis() -> FakeRedis:
     return FakeRedis()
+
+
+# ---------------------------------------------------------------------------
+# `client` — FastAPI TestClient with the DB session swapped for the in-memory
+# aiosqlite session above. 1.A's contract tests (and any future router test
+# that wants to hit the live app) depend on this.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def client(async_session: AsyncSession):
+    """Sync TestClient wrapping the FastAPI app with overridden DB session."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+    from app.models.base import get_async_session
+
+    async def _override_session() -> AsyncGenerator[AsyncSession, None]:
+        yield async_session
+
+    app.dependency_overrides[get_async_session] = _override_session
+    try:
+        with TestClient(app) as c:
+            yield c
+    finally:
+        app.dependency_overrides.pop(get_async_session, None)

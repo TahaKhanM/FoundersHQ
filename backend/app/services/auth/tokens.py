@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,12 +29,12 @@ def hash_token(raw: str) -> str:
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _aware(dt: datetime) -> datetime:
     """Treat naive datetimes (some DBs strip tz) as UTC."""
-    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
 async def verify_invitation_token(session: AsyncSession, raw: str, *, now: datetime | None = None) -> Invitation | None:

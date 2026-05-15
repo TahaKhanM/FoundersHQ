@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, update
@@ -116,7 +116,7 @@ async def forgot_password(
         id=gen_uuid(),
         user_id=user.id,
         token_hash=token_hash,
-        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
     )
     session.add(prt)
     await session.flush()
@@ -159,7 +159,7 @@ async def reset_password(
         update(PasswordResetToken)
         .where(PasswordResetToken.user_id == user.id)
         .where(PasswordResetToken.consumed_at.is_(None))
-        .values(consumed_at=datetime.now(timezone.utc))
+        .values(consumed_at=datetime.now(UTC))
     )
 
     org_id = await _first_org_id(session, user.id)
@@ -225,5 +225,4 @@ async def _first_org_id(session: AsyncSession, user_id: str) -> str | None:
         select(Membership.org_id).where(Membership.user_id == user_id)
         .order_by(Membership.created_at.asc()).limit(1)
     )
-    val = res.scalar_one_or_none()
-    return val
+    return res.scalar_one_or_none()
