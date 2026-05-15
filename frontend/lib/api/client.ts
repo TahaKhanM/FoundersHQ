@@ -1,4 +1,6 @@
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
+/** Base URL of the FastAPI backend. */
+export const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
 
 /** When true, hooks use mock data. Defaults to true unless NEXT_PUBLIC_MOCK_API is explicitly "false". */
 export const IS_MOCK = process.env.NEXT_PUBLIC_MOCK_API !== "false"
@@ -24,7 +26,7 @@ export async function apiFetch<T>(
   }
 
   const token = getAccessToken()
-  const url = path.startsWith("http") ? path : `${BASE_URL}${path}`
+  const url = path.startsWith("http") ? path : `${API_BASE_URL}${path}`
   const res = await fetch(url, {
     ...options,
     headers: {
