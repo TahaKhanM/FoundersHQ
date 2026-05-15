@@ -3,6 +3,7 @@
 import { SWRConfig } from "swr"
 import { Shortcuts } from "@/components/layout/shortcuts"
 import { ThemeProvider } from "@/components/theme-provider"
+import { BaseCurrencyProvider } from "@/lib/base-currency"
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -13,8 +14,15 @@ export function Providers({ children }: { children: React.ReactNode }) {
           dedupingInterval: 5000,
         }}
       >
-        {children}
-        <Shortcuts />
+        {/*
+          BaseCurrencyProvider must be inside SWRConfig so its `useOrg()`
+          call shares the deduped cache with any other component that
+          queries `/org`. Phase 2.C wiring.
+        */}
+        <BaseCurrencyProvider>
+          {children}
+          <Shortcuts />
+        </BaseCurrencyProvider>
       </SWRConfig>
     </ThemeProvider>
   )

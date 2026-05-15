@@ -56,6 +56,12 @@ export function mapSpendingMetrics(raw: BackendSpendingMetrics): SpendingMetrics
 }
 
 export function mapTransaction(raw: BackendTransaction): TransactionDTO {
+  // fx_rate_used arrives as either a string (Decimal serialiser) or a number.
+  // Preserve `null` distinctly from `undefined` so callers can detect
+  // "FX was explicitly skipped" vs "field absent on legacy payload".
+  const rawFx = raw.fx_rate_used ?? raw.fxRateUsed
+  const fxRateUsed =
+    rawFx === null || rawFx === undefined ? null : Number(rawFx)
   return {
     txnId: String(raw.id ?? raw.txnId ?? ""),
     date: raw.txn_date ?? raw.date ?? "",
@@ -63,6 +69,7 @@ export function mapTransaction(raw: BackendTransaction): TransactionDTO {
     canonicalMerchant: raw.merchant_canonical ?? raw.canonicalMerchant ?? raw.merchant ?? "",
     amount: Number(raw.amount ?? 0),
     currency: String(raw.currency ?? "USD"),
+    fxRateUsed,
     categoryId: raw.category_id ?? raw.categoryId ?? "",
     categoryName: raw.category_name ?? raw.categoryName ?? "",
     source: String(raw.source ?? "csv"),
@@ -88,12 +95,16 @@ export function mapInvoice(raw: BackendInvoice): InvoiceDTO {
     dueStr && raw.status !== "paid" && today > dueStr
       ? Math.floor((Date.parse(today) - Date.parse(dueStr)) / 86400000)
       : 0
+  const rawFx = raw.fx_rate_used ?? raw.fxRateUsed
+  const fxRateUsed =
+    rawFx === null || rawFx === undefined ? null : Number(rawFx)
   return {
     invoiceId: String(raw.id ?? raw.invoiceId ?? ""),
     customerId: String(raw.customer_id ?? raw.customerId ?? ""),
     customerName: raw.customer_name ?? raw.customerName ?? "",
     amount: Number(raw.amount ?? 0),
     currency: String(raw.currency ?? "USD"),
+    fxRateUsed,
     issueDate: raw.issue_date ?? raw.issueDate ?? "",
     dueDate: dueStr || (raw.due_date ?? raw.dueDate ?? ""),
     paidDate: raw.paid_date ?? raw.paidDate,

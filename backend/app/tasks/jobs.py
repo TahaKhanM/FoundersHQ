@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.config import get_settings
 from app.models import audit, commitment, funding, invoice, org, transaction
+from app.services.ingestion.fx_attach import lookup_fx_rate_used_sync
 from app.tasks.celery_app import celery_app
 
 # Sync session for Celery (workers use sync DB)
@@ -22,7 +23,13 @@ def get_sync_session():
 
 @celery_app.task(bind=True)
 def import_transactions_csv(self, org_id: str, file_content_base64: str | None = None, rows: list | None = None):
-    """Parse and upsert transactions. Dedupe by dedupe_hash."""
+    """Parse and upsert transactions. Dedupe by dedupe_hash.
+
+    Phase 2.C: each row records ``fx_rate_used`` (rate at txn_date that
+    converts the source currency into the org's base currency). Missing
+    rates produce a NULL ``fx_rate_used`` plus an aggregated warning in
+    the job result.
+    """
     import base64
     job_id = self.request.id
     session = get_sync_session()
@@ -33,9 +40,19 @@ def import_transactions_csv(self, org_id: str, file_content_base64: str | None =
             rows = list(parse_transactions_csv(content))
         if not rows:
             return {"status": "done", "imported": 0, "skipped": 0, "errors": []}
+
+        # Read the org's base currency once at the top of the task — it
+        # rarely changes and we want every row in this batch using the
+        # same target currency.
+        org_row = session.execute(
+            select(org.Org).where(org.Org.id == org_id)
+        ).scalar_one_or_none()
+        base_currency = (org_row.base_currency if org_row else None) or "USD"
+
         imported = 0
         skipped = 0
         errors = []
+        fx_missing_count = 0
         for r in rows:
             try:
                 txn_date = r.get("txn_date")
@@ -43,6 +60,7 @@ def import_transactions_csv(self, org_id: str, file_content_base64: str | None =
                     from dateutil.parser import parse as date_parse
                     txn_date = date_parse(txn_date).date()
                 amount = Decimal(str(r.get("amount", 0)))
+                row_currency = str(r.get("currency", "USD"))
                 h = hashlib.sha256(f"{org_id}{txn_date}{r.get('description','')}{amount}".encode()).hexdigest()[:64]
                 existing = session.execute(
                     select(transaction.Transaction).where(
@@ -53,6 +71,14 @@ def import_transactions_csv(self, org_id: str, file_content_base64: str | None =
                 if existing:
                     skipped += 1
                     continue
+                fx_rate_used = lookup_fx_rate_used_sync(
+                    session,
+                    base_currency=base_currency,
+                    source_currency=row_currency,
+                    on_date=txn_date,
+                )
+                if fx_rate_used is None and row_currency != base_currency:
+                    fx_missing_count += 1
                 t = transaction.Transaction(
                     id=str(uuid4()),
                     org_id=org_id,
@@ -61,7 +87,8 @@ def import_transactions_csv(self, org_id: str, file_content_base64: str | None =
                     merchant_raw=r.get("merchant_raw"),
                     merchant_canonical=r.get("merchant_raw"),
                     amount=amount,
-                    currency=str(r.get("currency", "USD")),
+                    currency=row_currency,
+                    fx_rate_used=fx_rate_used,
                     source="csv",
                     dedupe_hash=h,
                 )
@@ -69,6 +96,10 @@ def import_transactions_csv(self, org_id: str, file_content_base64: str | None =
                 imported += 1
             except Exception as e:
                 errors.append(str(e))
+        if fx_missing_count:
+            errors.append(
+                f"{fx_missing_count} rows imported with unknown FX rate; fx_rate_used left NULL"
+            )
         session.commit()
         audit_log = audit.AuditLog(
             id=str(uuid4()),
@@ -76,19 +107,23 @@ def import_transactions_csv(self, org_id: str, file_content_base64: str | None =
             action="import_transactions_csv",
             entity_type="job",
             entity_id=job_id,
-            details={"imported": imported, "skipped": skipped, "errors": errors},
+            details={"imported": imported, "skipped": skipped, "errors": errors, "fx_missing": fx_missing_count},
         )
         session.add(audit_log)
         session.commit()
         generate_org_notifications.delay(org_id, source="csv_import")
-        return {"status": "done", "imported": imported, "skipped": skipped, "errors": errors}
+        return {"status": "done", "imported": imported, "skipped": skipped, "errors": errors, "fx_missing": fx_missing_count}
     finally:
         session.close()
 
 
 @celery_app.task(bind=True)
 def import_invoices_csv(self, org_id: str, file_content_base64: str | None = None, rows: list | None = None):
-    """Parse and upsert invoices/customers."""
+    """Parse and upsert invoices/customers.
+
+    Phase 2.C: ``fx_rate_used`` (issue-date rate, source -> org base) is
+    persisted on each invoice row alongside the source currency.
+    """
     import base64
     job_id = self.request.id
     session = get_sync_session()
@@ -99,14 +134,22 @@ def import_invoices_csv(self, org_id: str, file_content_base64: str | None = Non
             rows = list(parse_invoices_csv(content))
         if not rows:
             return {"status": "done", "imported": 0, "errors": []}
+
+        org_row = session.execute(
+            select(org.Org).where(org.Org.id == org_id)
+        ).scalar_one_or_none()
+        base_currency = (org_row.base_currency if org_row else None) or "USD"
+
         imported = 0
         errors = []
+        fx_missing_count = 0
         for r in rows:
             try:
                 from dateutil.parser import parse as date_parse
                 issue_date = date_parse(r.get("issue_date", "2020-01-01")).date()
                 due_date = date_parse(r.get("due_date", "2020-01-01")).date()
                 amount = Decimal(str(r.get("amount", 0)))
+                row_currency = str(r.get("currency", "USD"))
                 customer_name = r.get("customer_name", "Unknown")
                 cust = session.execute(
                     select(invoice.Customer).where(
@@ -129,6 +172,16 @@ def import_invoices_csv(self, org_id: str, file_content_base64: str | None = Non
                 if existing:
                     continue
                 status = r.get("status", "open")
+                # Use the invoice's issue_date as the FX-rate lookup date —
+                # the moment the obligation crystallised.
+                fx_rate_used = lookup_fx_rate_used_sync(
+                    session,
+                    base_currency=base_currency,
+                    source_currency=row_currency,
+                    on_date=issue_date,
+                )
+                if fx_rate_used is None and row_currency != base_currency:
+                    fx_missing_count += 1
                 inv = invoice.Invoice(
                     id=str(uuid4()),
                     org_id=org_id,
@@ -137,19 +190,24 @@ def import_invoices_csv(self, org_id: str, file_content_base64: str | None = Non
                     issue_date=issue_date,
                     due_date=due_date,
                     amount=amount,
-                    currency=str(r.get("currency", "USD")),
+                    currency=row_currency,
+                    fx_rate_used=fx_rate_used,
                     status=status,
                 )
                 session.add(inv)
                 imported += 1
             except Exception as e:
                 errors.append(str(e))
+        if fx_missing_count:
+            errors.append(
+                f"{fx_missing_count} invoices imported with unknown FX rate; fx_rate_used left NULL"
+            )
         session.commit()
-        al = audit.AuditLog(id=str(uuid4()), org_id=org_id, action="import_invoices_csv", entity_type="job", entity_id=job_id, details={"imported": imported, "errors": errors})
+        al = audit.AuditLog(id=str(uuid4()), org_id=org_id, action="import_invoices_csv", entity_type="job", entity_id=job_id, details={"imported": imported, "errors": errors, "fx_missing": fx_missing_count})
         session.add(al)
         session.commit()
         generate_org_notifications.delay(org_id, source="csv_import")
-        return {"status": "done", "imported": imported, "errors": errors}
+        return {"status": "done", "imported": imported, "errors": errors, "fx_missing": fx_missing_count}
     finally:
         session.close()
 

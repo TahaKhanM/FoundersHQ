@@ -11,6 +11,7 @@ from app.api.routers import (
     dashboard,
     events,
     funding,
+    fx,
     ingest,
     integrations,
     invoices,
@@ -70,6 +71,7 @@ app.include_router(notifications.router, prefix="/notifications", tags=["notific
 app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 app.include_router(events.router, prefix="/events", tags=["events"])
 app.include_router(audit.router, prefix="/audit", tags=["audit"])
+app.include_router(fx.router, prefix="/fx", tags=["fx"])
 
 
 @app.get("/health")

@@ -45,6 +45,11 @@ class Transaction(Base):
     merchant_canonical: Mapped[str | None] = mapped_column(String(512), nullable=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    # Phase 2.C — multi-currency. The FX rate (source_currency -> org base
+    # currency) used at write time. Null when source == base (no conversion)
+    # or when the historical rate was missing at ingest. Stored alongside the
+    # row so future re-runs reproduce the same base-currency value.
+    fx_rate_used: Mapped[Decimal | None] = mapped_column(Numeric(18, 10), nullable=True)
     source: Mapped[str] = mapped_column(String(32), nullable=False)  # csv/api/questionnaire
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     dedupe_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)

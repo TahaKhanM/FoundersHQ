@@ -14,6 +14,7 @@ from app.models import (  # noqa: F401
     events_outbox,
     financial_profile,
     funding,
+    fx_rate,
     invitation,
     invoice,
     llm,
