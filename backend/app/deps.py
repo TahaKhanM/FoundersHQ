@@ -1,7 +1,8 @@
-"""FastAPI dependencies: auth, org, DB session."""
+"""FastAPI dependencies: auth, org, DB session, Redis."""
 from typing import Annotated
 from uuid import UUID
 
+import redis.asyncio as aioredis
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
@@ -14,6 +15,29 @@ from app.models.org import Membership, Org
 from app.models.user import User
 
 security = HTTPBearer(auto_error=False)
+
+
+# Process-wide Redis singleton. Lazily constructed on first injection so
+# tests that never touch SSE never open a connection. The async client is
+# safe to share across requests; it pools connections internally.
+_redis_client: aioredis.Redis | None = None
+
+
+def get_redis() -> aioredis.Redis:
+    """Return the per-process ``redis.asyncio.Redis`` singleton.
+
+    Used by routes that call the durable :func:`publish_event` (which
+    requires a live Redis to fan out). Best-effort publishes via the
+    in-process queue do *not* need this dependency.
+    """
+    global _redis_client
+    if _redis_client is None:
+        _redis_client = aioredis.from_url(
+            get_settings().redis_url,
+            encoding="utf-8",
+            decode_responses=False,
+        )
+    return _redis_client
 
 
 async def get_current_user(
@@ -118,3 +142,4 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 CurrentUserOptional = Annotated[User | None, Depends(get_current_user_optional)]
 CurrentOrg = Annotated[Org, Depends(get_current_org)]
 DbSession = Annotated[AsyncSession, Depends(get_async_session)]
+RedisDep = Annotated[aioredis.Redis, Depends(get_redis)]
