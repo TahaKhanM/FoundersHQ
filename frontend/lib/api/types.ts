@@ -360,3 +360,33 @@ export interface InvoiceMetricsDTO {
     "60+": number
   }
 }
+
+// =============================================
+// Audit Log
+// =============================================
+export interface AuditLogDTO {
+  id: string
+  orgId: string
+  userId: string | null
+  action: string
+  entityType: string
+  entityId: string | null
+  details: Record<string, unknown>
+  requestId: string | null
+  createdAt: string
+}
+
+export interface AuditLogListResponse {
+  items: AuditLogDTO[]
+  nextCursor: string | null
+}
+
+export interface AuditLogFilters {
+  action?: string
+  entityType?: string
+  userId?: string
+  from?: string
+  to?: string
+  cursor?: string
+  limit?: number
+}
