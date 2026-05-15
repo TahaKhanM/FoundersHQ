@@ -473,3 +473,59 @@ def daily_notifications_job():
         return {"status": "done", "orgs": len(org_ids)}
     finally:
         session.close()
+
+
+@celery_app.task
+def run_insights_for_org(org_id: str):
+    """Phase 2.F — run all deterministic insight generators for one org.
+
+    The orchestrator is async (it uses the same async session shape as the
+    API), so we drive it from Celery via ``asyncio.run`` with the project's
+    async session factory. Each call:
+
+    1. Loads facts for the org.
+    2. Calls every generator.
+    3. Dedupes against existing active insights.
+    4. Persists, audits, and publishes ``insight.created``.
+
+    Re-running the same day with unchanged facts inserts zero rows — the
+    dedupe hash makes the task idempotent.
+    """
+    import asyncio
+    from datetime import date as _date
+
+    from app.models.base import async_session_factory
+    from app.services.insights.run_all import run_all as _run_all
+
+    async def _drive() -> int:
+        async with async_session_factory() as session:
+            try:
+                created = await _run_all(
+                    org_id=str(org_id),
+                    today=_date.today(),
+                    session=session,
+                )
+                await session.commit()
+                return len(created)
+            except Exception:
+                await session.rollback()
+                raise
+
+    try:
+        count = asyncio.run(_drive())
+        return {"status": "done", "org_id": str(org_id), "created": count}
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "failed", "org_id": str(org_id), "error": str(exc)}
+
+
+@celery_app.task
+def run_insights_nightly():
+    """Phase 2.F beat entrypoint: fan out to one ``run_insights_for_org`` per org."""
+    session = get_sync_session()
+    try:
+        org_ids = [r[0] for r in session.execute(select(org.Org.id)).all()]
+        for oid in org_ids:
+            run_insights_for_org.delay(str(oid))
+        return {"status": "done", "orgs": len(org_ids)}
+    finally:
+        session.close()
