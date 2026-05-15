@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,9 +21,8 @@ from app.api.schemas import (
     UserDTO,
 )
 from app.config import get_settings
-from app.deps import CurrentUser, get_async_session, get_current_user
+from app.deps import CurrentUser, get_async_session
 from app.models.base import gen_uuid
-from app.models.invitation import Invitation
 from app.models.org import Membership, Org
 from app.models.password_reset import PasswordResetToken
 from app.models.user import User

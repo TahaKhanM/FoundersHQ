@@ -12,6 +12,7 @@ import {
   Landmark,
   MessageSquare,
   Settings,
+  Users,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react"
@@ -25,6 +26,7 @@ const navItems = [
   { label: "Runway", href: "/runway", icon: TrendingUp },
   { label: "Funding", href: "/funding", icon: Landmark },
   { label: "Explain", href: "/explain", icon: MessageSquare },
+  { label: "Team", href: "/team", icon: Users },
   { label: "Settings", href: "/settings", icon: Settings },
 ]
 

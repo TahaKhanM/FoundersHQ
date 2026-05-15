@@ -4,9 +4,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from sqlalchemy import and_, delete, select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import (
     InvitationCreate,
@@ -18,7 +17,7 @@ from app.api.schemas import (
 )
 from app.config import get_settings
 from app.deps import CurrentOrg, CurrentUser, DbSession, requires_role
-from app.models import commitment, funding, invoice, runway, transaction
+from app.models import commitment, invoice, runway, transaction
 from app.models.audit import AuditLog
 from app.models.base import gen_uuid
 from app.models.funding import UserSavedOpportunity
