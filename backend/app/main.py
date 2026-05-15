@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.api.routers import auth, org, ingest, spending, invoices, runway, funding, llm, customers, integrations, search, notifications, dashboard
+from app.middleware.request_id import RequestIdMiddleware
 
 settings = get_settings()
 
@@ -32,6 +33,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RequestIdMiddleware)
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(org.router, prefix="/org", tags=["org"])
