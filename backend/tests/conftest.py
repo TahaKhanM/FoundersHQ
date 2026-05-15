@@ -174,18 +174,33 @@ async def fake_redis() -> FakeRedis:
 
 @pytest.fixture
 def client(async_session: AsyncSession):
-    """Sync TestClient wrapping the FastAPI app with overridden DB session."""
+    """Sync TestClient wrapping the FastAPI app with overridden DB + Redis.
+
+    The Redis dependency (used by routes that durable-publish via the
+    outbox) is replaced with a :class:`FakeRedis` so tests can assert
+    against ``published[channel]`` without standing up a real broker.
+    """
     from fastapi.testclient import TestClient
 
+    from app.deps import get_redis
     from app.main import app
     from app.models.base import get_async_session
 
     async def _override_session() -> AsyncGenerator[AsyncSession, None]:
         yield async_session
 
+    fake = FakeRedis()
+
+    def _override_redis() -> FakeRedis:
+        return fake
+
     app.dependency_overrides[get_async_session] = _override_session
+    app.dependency_overrides[get_redis] = _override_redis
     try:
         with TestClient(app) as c:
+            # Attach for tests that want to inspect Redis publishes.
+            c.fake_redis = fake  # type: ignore[attr-defined]
             yield c
     finally:
         app.dependency_overrides.pop(get_async_session, None)
+        app.dependency_overrides.pop(get_redis, None)

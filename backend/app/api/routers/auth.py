@@ -31,6 +31,7 @@ from app.services.auth.tokens import (
     consume_reset_token,
     generate_token,
 )
+from app.services.events import EventType
 from app.services.events import publish_event_best_effort as publish_event
 from app.utils.audit import record_audit
 from app.utils.hashing import hash_password, verify_password
@@ -132,7 +133,7 @@ async def forgot_password(
             entity_type="user",
             entity_id=user.id,
         )
-        _safe_publish(org_id, "auth.password_reset_requested", {"user_id": user.id})
+        _safe_publish(org_id, EventType.AUTH_PASSWORD_RESET_REQUESTED.value, {"user_id": user.id})
 
     settings = get_settings()
     dev_token = raw if settings.env != "prod" else None
@@ -172,7 +173,7 @@ async def reset_password(
             entity_type="user",
             entity_id=user.id,
         )
-        _safe_publish(org_id, "auth.password_reset_consumed", {"user_id": user.id})
+        _safe_publish(org_id, EventType.AUTH_PASSWORD_RESET_CONSUMED.value, {"user_id": user.id})
 
     return ResetPasswordResponse(ok=True)
 
@@ -214,7 +215,7 @@ async def accept_invite(
         entity_id=inv.id,
         details={"role": inv.role},
     )
-    _safe_publish(inv.org_id, "invitation.accepted", {"invitation_id": inv.id, "user_id": user.id})
+    _safe_publish(inv.org_id, EventType.INVITATION_ACCEPTED.value, {"invitation_id": inv.id, "user_id": user.id})
 
     access_token = create_access_token(user.id)
     return SessionDTO(access_token=access_token, user=UserDTO.model_validate(user))

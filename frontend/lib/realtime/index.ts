@@ -107,6 +107,11 @@ class RealtimeClient {
       )
       if (!r.ok) return
       const rows = (await r.json()) as RealtimeEvent[]
+      // Phase 2.E contract: replayed events route through the same
+      // `dispatch` path as live messages, so domain hooks
+      // (useSpendingRealtime / useInvoicesRealtime / ...) invalidate
+      // their SWR keys after a reconnect just as they would for a fresh
+      // event. Adding new subscribers requires no change here.
       for (const row of rows) {
         if (row.seq) this.lastSeq = row.seq
         this.dispatch(row)

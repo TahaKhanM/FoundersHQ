@@ -22,6 +22,7 @@ from collections import deque
 from typing import Any
 
 from app.services.events.publisher import publish_event
+from app.services.events.types import ALL_EVENT_TYPES, EventType
 
 log = logging.getLogger(__name__)
 
@@ -50,4 +51,11 @@ def peek_events() -> list[tuple[str, str, dict[str, Any]]]:
     return list(_test_queue)
 
 
-__all__ = ["publish_event", "publish_event_best_effort", "drain_events", "peek_events"]
+__all__ = [
+    "ALL_EVENT_TYPES",
+    "EventType",
+    "drain_events",
+    "peek_events",
+    "publish_event",
+    "publish_event_best_effort",
+]

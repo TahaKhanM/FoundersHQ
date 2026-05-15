@@ -1,8 +1,11 @@
 """Invoices router: overview, list, detail, customers, action-queue, touches, templates."""
+from __future__ import annotations
+
+import logging
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 
 from app.api.schemas import (
@@ -20,13 +23,39 @@ from app.api.schemas import (
     TouchLogDTO,
 )
 from app.config import get_settings
-from app.deps import CurrentOrg, CurrentUserOptional, DbSession
+from app.deps import CurrentOrg, CurrentUser, CurrentUserOptional, DbSession, get_redis
 from app.models import invoice as inv_models
+from app.services.events import (
+    EventType,
+    publish_event,
+    publish_event_best_effort,
+)
 from app.services.invoices.action_queue import action_queue_item
 from app.services.invoices.risk_scoring import priority_score_components
+from app.utils.audit import record_audit
 from app.utils.pagination import paginate
 
 router = APIRouter()
+log = logging.getLogger(__name__)
+
+
+def _safe_publish_best_effort(org_id: str, event_type: EventType, payload: dict) -> None:
+    try:
+        publish_event_best_effort(org_id, event_type.value, payload)
+    except Exception:  # noqa: BLE001
+        log.exception("publish_event failed for %s", event_type.value)
+
+
+async def _safe_publish_durable(
+    session, redis, org_id: str, event_type: EventType, payload: dict
+) -> None:
+    """Durable publish (outbox + Redis). A Redis outage logs but won't raise."""
+    try:
+        await publish_event(
+            session, redis=redis, org_id=org_id, type=event_type.value, payload=payload
+        )
+    except Exception:  # noqa: BLE001
+        log.exception("durable publish_event failed for %s", event_type.value)
 
 
 @router.get("/overview", response_model=InvoiceOverviewDTO)
@@ -267,8 +296,28 @@ async def create_touch(
         user_id=user_id,
     )
     session.add(e)
+    await session.flush()
+    await record_audit(
+        session,
+        org_id=org.id,
+        user_id=user_id,
+        action="invoice.touch_logged",
+        entity_type="invoice_event",
+        entity_id=e.id,
+        details={"invoice_id": body.invoice_id, "channel": body.channel, "touch_type": body.touch_type},
+    )
     await session.commit()
     await session.refresh(e)
+    _safe_publish_best_effort(
+        org.id,
+        EventType.INVOICE_TOUCH_LOGGED,
+        {
+            "invoice_event_id": e.id,
+            "invoice_id": body.invoice_id,
+            "channel": body.channel,
+            "touch_type": body.touch_type,
+        },
+    )
     return TouchLogDTO.model_validate(e)
 
 
@@ -301,10 +350,15 @@ async def get_parsing_job(job_id: str, org: CurrentOrg, session: DbSession):
 
 
 @router.post("/parsing/jobs/{job_id}/confirm")
-async def confirm_parsing_job(job_id: str, body: InvoiceParsingConfirmRequest, org: CurrentOrg, session: DbSession):
+async def confirm_parsing_job(
+    job_id: str,
+    body: InvoiceParsingConfirmRequest,
+    org: CurrentOrg,
+    user: CurrentUser,
+    session: DbSession,
+    redis=Depends(get_redis),
+):
     from datetime import datetime
-
-    from fastapi import HTTPException
 
     from app.models.base import gen_uuid
     result = await session.execute(
@@ -347,5 +401,28 @@ async def confirm_parsing_job(job_id: str, body: InvoiceParsingConfirmRequest, o
     job.status = "confirmed"
     job.invoice_id = inv.id
     job.confirmed_at = datetime.utcnow()
+    await record_audit(
+        session,
+        org_id=org.id,
+        user_id=user.id,
+        action="invoice.parsing_confirmed",
+        entity_type="invoice",
+        entity_id=inv.id,
+        details={"job_id": job_id, "invoice_number": body.invoice_number},
+    )
+    # Durable: invoice.created is in the "must not lose" set — write the
+    # outbox row inside the same transaction as the invoice insert.
+    await _safe_publish_durable(
+        session,
+        redis,
+        org.id,
+        EventType.INVOICE_CREATED,
+        {"invoice_id": inv.id, "amount": str(inv.amount), "currency": inv.currency},
+    )
     await session.commit()
+    _safe_publish_best_effort(
+        org.id,
+        EventType.INVOICE_PARSING_CONFIRMED,
+        {"invoice_id": inv.id, "job_id": job_id},
+    )
     return {"invoice_id": inv.id, "status": "confirmed"}

@@ -19,7 +19,7 @@ from app.api.schemas import FxRateBulkIngestRequest, FxRateDTO, FxRateUpsertResu
 from app.deps import CurrentOrg, CurrentUser, DbSession, requires_role
 from app.models.fx_rate import FxRate
 from app.models.org import Membership
-from app.services.events import publish_event_best_effort
+from app.services.events import EventType, publish_event_best_effort
 from app.services.fx.ingest import FxRateRow, upsert_rates
 from app.utils.audit import record_audit
 
@@ -105,7 +105,7 @@ async def bulk_upsert_fx_rates(
     )
     _safe_publish(
         org.id,
-        "fx.rates_upserted",
+        EventType.FX_RATES_UPSERTED.value,
         {
             "count": len(typed_rows),
             "inserted": result["inserted"],
