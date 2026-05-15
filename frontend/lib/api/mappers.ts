@@ -15,6 +15,7 @@ import type {
   CategoryDTO,
   CategorizationRuleDTO,
   CommitmentDTO,
+  InsightDTO,
 } from "./types"
 
  
@@ -217,6 +218,34 @@ export function mapAlert(raw: BackendAlert): AlertDTO {
     evidenceIds: Array.isArray(raw.evidence_ids) ? raw.evidence_ids : (raw.evidenceIds ?? []),
     nextStepTitle: raw.next_step_title ?? raw.nextStepTitle ?? null,
     deepLink: raw.deep_link ?? raw.deepLink ?? null,
+  }
+}
+
+
+type BackendInsight = Record<string, any>
+
+/**
+ * Map a backend ``insight`` row (snake_case) to the frontend
+ * :class:`InsightDTO`. ``evidence_ids`` collapses to an empty array when
+ * absent so the chip component renders uniformly.
+ */
+export function mapInsight(raw: BackendInsight): InsightDTO {
+  return {
+    id: String(raw.id ?? ""),
+    orgId: String(raw.org_id ?? raw.orgId ?? ""),
+    type: String(raw.type ?? "unknown"),
+    severity: String(raw.severity ?? "info"),
+    title: String(raw.title ?? ""),
+    body: String(raw.body ?? ""),
+    evidenceIds: Array.isArray(raw.evidence_ids)
+      ? raw.evidence_ids.map((v: unknown) => String(v))
+      : Array.isArray(raw.evidenceIds)
+        ? raw.evidenceIds.map((v: unknown) => String(v))
+        : [],
+    status: String(raw.status ?? "active"),
+    deepLink: raw.deep_link ?? raw.deepLink ?? null,
+    createdAt: raw.created_at ?? raw.createdAt ?? null,
+    dismissedAt: raw.dismissed_at ?? raw.dismissedAt ?? null,
   }
 }
 

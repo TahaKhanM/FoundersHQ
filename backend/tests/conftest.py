@@ -69,6 +69,7 @@ def _import_all_models() -> None:
         financial_profile,
         funding,
         fx_rate,
+        insight,
         invitation,
         invoice,
         llm,

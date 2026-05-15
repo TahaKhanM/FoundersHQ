@@ -611,6 +611,48 @@ class NotificationPreferenceUpdate(BaseModel):
     preferences: list[NotificationPreferenceDTO]
 
 
+# ---- Insights (phase 2.F) ----
+class InsightDTO(BaseModel):
+    """One row from the ``insights`` table.
+
+    Severity is one of ``info | warn | critical``. Status is
+    ``active | dismissed``. ``evidence_ids`` is always a list (possibly
+    empty) so the frontend's evidence chip can be rendered uniformly.
+    """
+
+    id: str
+    org_id: str
+    type: str
+    severity: str
+    title: str
+    body: str
+    evidence_ids: list[str] = Field(default_factory=list)
+    status: str
+    deep_link: str | None = None
+    created_at: datetime | None = None
+    dismissed_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InsightListResponse(BaseModel):
+    """Insights list endpoint response.
+
+    Kept as a thin envelope (vs. a raw list) so we can add ``next_cursor``
+    later without a breaking change.
+    """
+
+    items: list[InsightDTO]
+    next_cursor: str | None = None
+
+
+class InsightRunResponse(BaseModel):
+    """Result of a manual ``POST /insights/run`` admin trigger."""
+
+    created: int
+    created_ids: list[str] = Field(default_factory=list)
+
+
 # ---- Dashboard / Health score ----
 class DashboardMetricsDTO(BaseModel):
     """Aggregated metrics for dashboard overview."""

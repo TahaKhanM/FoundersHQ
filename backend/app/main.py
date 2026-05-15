@@ -13,6 +13,7 @@ from app.api.routers import (
     funding,
     fx,
     ingest,
+    insights,
     integrations,
     invoices,
     llm,
@@ -72,6 +73,7 @@ app.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 app.include_router(events.router, prefix="/events", tags=["events"])
 app.include_router(audit.router, prefix="/audit", tags=["audit"])
 app.include_router(fx.router, prefix="/fx", tags=["fx"])
+app.include_router(insights.router, prefix="/insights", tags=["insights"])
 
 
 @app.get("/health")

@@ -370,6 +370,40 @@ export interface InvoiceMetricsDTO {
 }
 
 // =============================================
+// Insights (phase 2.F)
+// =============================================
+export type InsightSeverity = "info" | "warn" | "critical"
+
+export type InsightStatus = "active" | "dismissed"
+
+/**
+ * One row from the deterministic insight stream.
+ *
+ * The stream surfaces proactive findings (cash drops, late invoices,
+ * vendor spend spikes, upcoming commitment renewals, runway shifts)
+ * alongside notifications in the inbox.
+ */
+export interface InsightDTO {
+  id: string
+  orgId: string
+  /** Generator key, e.g. `cash_drop`, `late_invoice`, `vendor_spike`. */
+  type: string
+  severity: InsightSeverity | string
+  title: string
+  body: string
+  evidenceIds: string[]
+  status: InsightStatus | string
+  deepLink: string | null
+  createdAt: string | null
+  dismissedAt: string | null
+}
+
+export interface InsightListResponseDTO {
+  items: InsightDTO[]
+  nextCursor: string | null
+}
+
+// =============================================
 // Audit Log
 // =============================================
 export interface AuditLogDTO {

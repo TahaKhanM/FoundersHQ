@@ -15,6 +15,7 @@ from app.models import (  # noqa: F401
     financial_profile,
     funding,
     fx_rate,
+    insight,
     invitation,
     invoice,
     llm,
