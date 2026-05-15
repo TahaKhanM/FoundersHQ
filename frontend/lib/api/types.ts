@@ -71,6 +71,12 @@ export interface TransactionDTO {
   canonicalMerchant: string
   amount: number
   currency: string
+  /**
+   * Phase 2.C — historical FX rate (source -> org base) captured at write
+   * time. `null` when source == base, when the row pre-dates phase 2.C,
+   * or when no rate was available at ingest.
+   */
+  fxRateUsed?: number | null
   categoryId: string
   categoryName: string
   source: string
@@ -140,6 +146,8 @@ export interface InvoiceDTO {
   customerName: string
   amount: number
   currency: string
+  /** Phase 2.C — see `TransactionDTO.fxRateUsed`. */
+  fxRateUsed?: number | null
   issueDate: string
   dueDate: string
   paidDate?: string
