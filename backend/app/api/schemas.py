@@ -1,0 +1,817 @@
+"""Pydantic DTOs for FoundersHQ API (match frontend types)."""
+from __future__ import annotations
+
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Any, Generic, TypeVar
+
+from pydantic import BaseModel, ConfigDict, Field
+
+T = TypeVar("T")
+
+
+# ---- Pagination ----
+class PaginationParams(BaseModel):
+    page: int = Field(1, ge=1, description="Page number")
+    page_size: int = Field(20, ge=1, le=100)
+    sort: str | None = None
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    items: list[T]
+    page: int
+    page_size: int
+    total: int
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class UserDTO(BaseModel):
+    id: str
+    email: str
+    created_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SessionDTO(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserDTO
+
+
+class RegisterResponse(BaseModel):
+    user: UserDTO
+    access_token: str
+    token_type: str = "bearer"
+
+
+# ---- Org ----
+class OrgDTO(BaseModel):
+    id: str
+    name: str
+    created_at: datetime | None = None
+    # Phase 2.C — the base currency the frontend uses for the
+    # ``BaseCurrencyProvider``. Defaults to "USD" at org creation time.
+    base_currency: str = "USD"
+    fiscal_year_start_month: int = 1
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class OrgDataDeleteRequest(BaseModel):
+    confirm: bool = False
+
+
+# ---- Phase 1.B: onboarding wizard ----
+class OnboardingCaptureDTO(BaseModel):
+    org_name: str | None = None
+    base_currency: str | None = None
+    fiscal_year_start_month: int | None = None
+    persona: str | None = None
+    data_choice: str | None = None
+
+
+class OnboardingStateDTO(BaseModel):
+    step: int
+    completed_at: datetime | None = None
+    captured: OnboardingCaptureDTO
+
+
+class OnboardingStepResponse(BaseModel):
+    step: int
+    completed_at: datetime | None = None
+    captured: OnboardingCaptureDTO
+
+
+class OnboardingCompleteResponse(BaseModel):
+    completed_at: datetime
+    org: OrgDTO
+
+
+class OnboardingSeedSampleResponse(BaseModel):
+    transactions_inserted: int
+    invoices_inserted: int
+    customers_inserted: int
+    commitments_inserted: int
+
+
+# ---- Auth: password reset / invitation accept ----
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ForgotPasswordResponse(BaseModel):
+    ok: bool = True
+    # Only set in non-prod (settings.env != "prod"); shown to the user once.
+    dev_token: str | None = None
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(..., min_length=8)
+
+
+class ResetPasswordResponse(BaseModel):
+    ok: bool = True
+
+
+class AcceptInviteRequest(BaseModel):
+    token: str
+    email: str
+    password: str | None = None  # required only if no user exists for the email
+
+
+# ---- Org: invitations + members ----
+class InvitationCreate(BaseModel):
+    email: str
+    role: str = Field(..., pattern="^(admin|member)$")
+
+
+class InvitationDTO(BaseModel):
+    id: str
+    org_id: str
+    email: str
+    role: str
+    expires_at: datetime
+    accepted_at: datetime | None = None
+    revoked_at: datetime | None = None
+    created_at: datetime
+    # Only present immediately after creation in non-prod envs.
+    dev_token: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MembershipDTO(BaseModel):
+    id: str
+    org_id: str
+    user_id: str
+    email: str
+    role: str
+    created_at: datetime
+
+
+class MembershipPatch(BaseModel):
+    role: str = Field(..., pattern="^(owner|admin|member)$")
+
+
+# ---- Ingest ----
+class IngestJobResponse(BaseModel):
+    job_id: str
+
+
+class IngestJobStatusDTO(BaseModel):
+    job_id: str
+    status: str
+    errors: list[str] = []
+    imported_transactions: int | None = None
+    imported_invoices: int | None = None
+    skipped: int | None = None
+
+
+class QuestionnairePayload(BaseModel):
+    cash_balance: Decimal | None = None
+    currency: str | None = None
+    monthly_costs_estimate: Decimal | None = None
+    monthly_revenue_estimate: Decimal | None = None
+    notes: str | None = None
+
+
+class QuestionnaireSummary(BaseModel):
+    saved: bool = True
+    message: str = "Questionnaire data saved"
+
+
+# ---- Spending ----
+class SpendingMetricsDTO(BaseModel):
+    total_outflow_30d: Decimal
+    total_outflow_90d: Decimal
+    total_inflow_30d: Decimal
+    total_inflow_90d: Decimal
+    net_burn_30d: Decimal
+    net_burn_90d: Decimal
+    run_rate_outflow: Decimal
+    run_rate_net_burn: Decimal
+    spend_creep_pct: float | None = None
+    spend_creep_alert: bool = False
+    cash_weeks: float | None = None
+    cash_weeks_flag: str | None = None  # "infinite" | "na" | null
+    buffer_ratio: float | None = None
+    revenue_breakeven_gap: Decimal | None = None
+    currency: str = "USD"
+    multi_currency_warning: bool = False
+    reconciliation: SpendingReconciliationDTO | None = None
+
+
+class SpendingReconciliationDTO(BaseModel):
+    weekly_outflow_series: list[dict]  # [{week_start, total_outflow}]
+    period_outflow_total: Decimal
+    sum_of_weekly_totals: Decimal
+    mismatch: bool
+    mismatch_note: str | None = None
+
+
+class TransactionDTO(BaseModel):
+    id: str
+    org_id: str
+    txn_date: date
+    description: str | None
+    merchant_raw: str | None
+    merchant_canonical: str | None
+    amount: Decimal
+    currency: str
+    source: str
+    category_id: str | None = None
+    created_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TransactionCategoryPatch(BaseModel):
+    category_id: str | None = None
+
+
+class CategoryDTO(BaseModel):
+    id: str
+    org_id: str
+    name: str
+    created_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CategorizationRuleDTO(BaseModel):
+    id: str
+    org_id: str
+    pattern: str
+    match_type: str
+    category_id: str
+    enabled: bool
+    created_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CategorizationRuleCreate(BaseModel):
+    pattern: str
+    match_type: str = "contains"
+    category_id: str
+
+
+class CategorizationRulePatch(BaseModel):
+    pattern: str | None = None
+    match_type: str | None = None
+    category_id: str | None = None
+    enabled: bool | None = None
+
+
+class CommitmentDTO(BaseModel):
+    id: str
+    org_id: str
+    merchant_canonical: str
+    frequency: str
+    typical_amount: Decimal
+    currency: str
+    last_seen_date: date
+    next_due_date: date | None
+    confidence: float
+    enabled: bool
+    created_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CommitmentPatch(BaseModel):
+    enabled: bool | None = None
+
+
+class AlertDTO(BaseModel):
+    id: str
+    type: str
+    title: str
+    message: str
+    severity: str  # info | warning | critical
+    evidence_ids: list[str] = []
+    next_step_title: str | None = None
+    deep_link: str | None = None
+    created_at: datetime | None = None
+
+
+# ---- Invoices ----
+class InvoiceOverviewDTO(BaseModel):
+    total_open: Decimal
+    total_overdue: Decimal
+    count_open: int
+    count_overdue: int
+    ageing_buckets: dict[str, Decimal]  # e.g. 0-30, 31-60, 61-90, 90+
+    expected_cash_in_series: list[dict[str, Any]]  # [{week_start, amount_base, amount_pess}]
+    currency: str = "USD"
+
+
+class InvoiceDTO(BaseModel):
+    id: str
+    org_id: str
+    customer_id: str
+    invoice_number: str
+    issue_date: date
+    due_date: date
+    paid_date: date | None
+    amount: Decimal
+    currency: str
+    status: str
+    po_number: str | None
+    notes: str | None
+    needs_review: bool = False
+    created_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InvoiceDetailDTO(InvoiceDTO):
+    customer_name: str | None = None
+    predictions: InvoicePredictionDTO | None = None
+    risk: InvoiceRiskDTO | None = None
+    events: list[TouchLogDTO] = []
+    evidence_ids: list[str] = []
+
+
+class InvoicePredictionDTO(BaseModel):
+    expected_pay_date_base: date
+    expected_pay_date_pess: date
+    confidence_tier: str
+    computed_at: datetime | None = None
+
+
+class InvoiceRiskDTO(BaseModel):
+    risk_score: float
+    priority_score: float
+    reasons: list[str]
+    computed_at: datetime | None = None
+
+
+class CustomerDTO(BaseModel):
+    id: str
+    org_id: str
+    name_raw: str
+    name_canonical: str | None
+    created_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CustomerDetailDTO(CustomerDTO):
+    invoices: list[InvoiceDTO] = []
+
+
+class ActionQueueItemDTO(BaseModel):
+    invoice_id: str
+    customer_name: str
+    amount: Decimal
+    due_date: date
+    days_overdue: int
+    priority_score: float
+    suggested_action: str
+    evidence_ids: list[str] = []
+    reasons: list[str] = []
+    last_touched_at: datetime | None = None
+    last_touch_type: str | None = None
+    is_completed: bool = False
+
+
+class TouchLogDTO(BaseModel):
+    id: str
+    invoice_id: str
+    channel: str
+    touch_type: str
+    notes: str | None
+    user_id: str | None = None
+    created_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TouchLogCreate(BaseModel):
+    invoice_id: str
+    channel: str  # email/call/other
+    touch_type: str  # reminder/escalation/dispute
+    notes: str | None = None
+
+
+class InvoiceTemplatesRequest(BaseModel):
+    invoice_ids: list[str]
+
+
+class InvoiceTemplateItem(BaseModel):
+    invoice_id: str
+    template_key: str
+    subject: str | None = None
+    body: str | None = None
+
+
+# ---- Runway ----
+class RunwayForecastRequest(BaseModel):
+    horizon_weeks: int = Field(26, ge=1, le=104)
+    scenario_params: dict[str, Any] | None = None
+    milestones: list[dict[str, Any]] | None = None
+
+
+class WeeklyForecastRowDTO(BaseModel):
+    week_start: date
+    starting_cash: Decimal
+    inflows: Decimal
+    outflows: Decimal
+    ending_cash: Decimal
+    flags: list[str] | None = None
+    evidence_ids: list[str] | None = None
+
+
+class RunwayForecastDTO(BaseModel):
+    id: str
+    org_id: str
+    generated_at: datetime
+    horizon_weeks: int
+    cash_start: Decimal
+    currency: str
+    crash_week_base: int | None
+    crash_week_pess: int | None
+    cash_weeks_base: float | None
+    cash_weeks_pess: float | None
+    scenario_params: dict | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RunwayForecastFullResponse(BaseModel):
+    forecast: RunwayForecastDTO
+    rows: list[WeeklyForecastRowDTO]
+    attribution: list[dict[str, Any]] = []  # significant dips/rises with evidence_ids
+
+
+class ScenarioCreate(BaseModel):
+    name: str
+    params: dict[str, Any] | None = None
+
+
+class ScenarioApplyRequest(BaseModel):
+    scenario_id: str
+    persist: bool = False
+
+
+class MilestoneDTO(BaseModel):
+    id: str
+    org_id: str
+    name: str
+    target_type: str
+    target_value: Decimal
+    target_week_start: date | None
+    created_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MilestoneCreate(BaseModel):
+    name: str
+    target_type: str  # cash/runway/revenue
+    target_value: Decimal
+    target_week_start: date | None = None
+
+
+class MilestonePatch(BaseModel):
+    name: str | None = None
+    target_type: str | None = None
+    target_value: Decimal | None = None
+    target_week_start: date | None = None
+
+
+class AttributionItemDTO(BaseModel):
+    week_start: date
+    delta_type: str  # dip | rise
+    delta_amount: Decimal
+    evidence_ids: list[str]
+    components: list[dict[str, Any]]
+
+
+# ---- Funding ----
+class FundingRouteDTO(BaseModel):
+    route_type: str
+    name: str
+    fit_score: float
+    breakdown: dict[str, float]  # Eligibility, Speed, etc.
+    fired_rules: list[str]
+    opportunities_count: int = 0
+
+
+class FundingOpportunityDTO(BaseModel):
+    id: str
+    provider_id: str | None
+    type: str
+    name: str
+    geography: str | None
+    sector_tags: list[str] | None
+    stage_tags: list[str] | None
+    amount_min: Decimal | None
+    amount_max: Decimal | None
+    deadline: date | None
+    cycle_time_days_est: int | None
+    eligibility_text: str | None
+    requirements_text: str | None
+    application_url: str | None
+    source_url: str | None
+    last_seen_at: datetime | None
+    last_updated_at: datetime | None
+    parse_confidence: float | None
+    saved_status: str | None = None  # planned/applied/declined if user saved
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FundingOpportunitySaveRequest(BaseModel):
+    opportunity_id: str
+    status: str = "planned"  # planned/applied/declined
+    notes: str | None = None
+
+
+class FundingTimelineItemDTO(BaseModel):
+    opportunity_id: str
+    name: str
+    type: str
+    recommended_by_date: date | None
+    deadline: date | None
+    rationale: str
+    urgency: str
+
+
+class ImprovementItemDTO(BaseModel):
+    id: str
+    linked_module: str  # spending/invoices/runway/funding
+    title: str
+    description: str
+    target_evidence_ids: list[str]
+    priority: float
+
+
+# ---- Search (deterministic global search) ----
+class SearchResultDTO(BaseModel):
+    type: str  # transaction | invoice | customer | commitment | funding_opportunity | page
+    id: str
+    title: str
+    subtitle: str | None = None
+    snippet: str | None = None
+    deep_link: str
+    open_param: str | None = None
+    score: float
+    match_reason: str  # exact_id | text_match | status | recency | type_hint
+
+
+# ---- Notifications ----
+class NotificationDTO(BaseModel):
+    id: str
+    org_id: str
+    type: str
+    severity: str
+    title: str
+    message: str
+    evidence_ids: list[str] | None = None
+    deep_link: str | None = None
+    created_at: datetime | None = None
+    read_at: datetime | None = None
+    archived_at: datetime | None = None
+    snoozed_until: datetime | None = None
+    dedupe_key: str | None = None
+    source: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# The Inbox supports four discrete snooze durations; no free-form picker
+# until we have a clear UX need.
+SnoozeDuration = str  # validated by literal type below
+
+
+class NotificationSnoozeRequest(BaseModel):
+    duration: str = Field(..., pattern="^(1h|4h|24h|monday)$")
+
+
+class NotificationPreferenceDTO(BaseModel):
+    type: str
+    in_app: bool
+    email: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class NotificationPreferenceUpdate(BaseModel):
+    preferences: list[NotificationPreferenceDTO]
+
+
+# ---- Insights (phase 2.F) ----
+class InsightDTO(BaseModel):
+    """One row from the ``insights`` table.
+
+    Severity is one of ``info | warn | critical``. Status is
+    ``active | dismissed``. ``evidence_ids`` is always a list (possibly
+    empty) so the frontend's evidence chip can be rendered uniformly.
+    """
+
+    id: str
+    org_id: str
+    type: str
+    severity: str
+    title: str
+    body: str
+    evidence_ids: list[str] = Field(default_factory=list)
+    status: str
+    deep_link: str | None = None
+    created_at: datetime | None = None
+    dismissed_at: datetime | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InsightListResponse(BaseModel):
+    """Insights list endpoint response.
+
+    Kept as a thin envelope (vs. a raw list) so we can add ``next_cursor``
+    later without a breaking change.
+    """
+
+    items: list[InsightDTO]
+    next_cursor: str | None = None
+
+
+class InsightRunResponse(BaseModel):
+    """Result of a manual ``POST /insights/run`` admin trigger."""
+
+    created: int
+    created_ids: list[str] = Field(default_factory=list)
+
+
+# ---- Dashboard / Health score ----
+class DashboardMetricsDTO(BaseModel):
+    """Aggregated metrics for dashboard overview."""
+    cash_weeks: float
+    net_burn_30d: Decimal
+    total_outflow_30d: Decimal
+    spend_creep_status: str  # rising | stable | declining
+    overdue_ratio: float
+    runway_base: float
+    runway_pess: float
+
+
+class HealthScoreBreakdownItem(BaseModel):
+    key: str
+    label: str
+    value: float
+    weightPct: float
+
+
+class HealthScoreResponse(BaseModel):
+    score: float
+    breakdown: list[HealthScoreBreakdownItem]
+    notes: list[str] = []
+
+
+# ---- LLM ----
+class LLMExplainRequest(BaseModel):
+    question: str
+    context_modules: list[str] = []  # spending, invoices, runway, funding
+    focus_evidence_ids: list[str] | None = None
+
+
+class LLMExplainResponse(BaseModel):
+    answer: str
+    citations: list[str]
+    confidence: float
+    disclaimers: list[str] = []
+
+
+class LLMDraftMessageRequest(BaseModel):
+    invoice_id: str
+    tone: str = "professional"  # professional/friendly/urgent
+
+
+class LLMDraftMessageResponse(BaseModel):
+    message: str
+    citations: list[str] = []
+
+
+# ---- Integration: Funding ingest ----
+class FundingOpportunityIngestItem(BaseModel):
+    name: str
+    type: str
+    geography: str | None = None
+    amount_min: Decimal | None = None
+    amount_max: Decimal | None = None
+    deadline: date | None = None
+    cycle_time_days_est: int | None = None
+    eligibility_text: str | None = None
+    requirements_text: str | None = None
+    application_url: str | None = None
+    source_url: str | None = None
+    last_seen_at: datetime | None = None
+    last_updated_at: datetime | None = None
+    parse_confidence: float | None = None
+    provider_name: str | None = None
+    sector_tags: list[str] | None = None
+    stage_tags: list[str] | None = None
+
+
+class FundingOpportunitiesIngestRequest(BaseModel):
+    opportunities: list[FundingOpportunityIngestItem]
+
+
+class FundingIngestStats(BaseModel):
+    created: int
+    updated: int
+    errors: int
+    total: int
+
+
+# ---- Integration: Invoice parsing ----
+class ParsedInvoiceField(BaseModel):
+    value: Any
+    confidence: float
+
+
+class ParsedInvoicePayload(BaseModel):
+    invoice_number: ParsedInvoiceField | None = None
+    customer_name: ParsedInvoiceField | None = None
+    issue_date: ParsedInvoiceField | None = None
+    due_date: ParsedInvoiceField | None = None
+    amount: ParsedInvoiceField | None = None
+    currency: ParsedInvoiceField | None = None
+    po_number: ParsedInvoiceField | None = None
+    tax: ParsedInvoiceField | None = None
+    line_items: list[dict] | None = None
+
+
+class InvoiceParsingConfirmRequest(BaseModel):
+    invoice_number: str
+    customer_name: str
+    customer_id: str | None = None  # existing or omit to create new
+    issue_date: date
+    due_date: date
+    amount: Decimal
+    currency: str
+    po_number: str | None = None
+    notes: str | None = None
+
+
+# ---- FX rates (phase 2.C) ----
+class FxRateDTO(BaseModel):
+    """One snapshot row from the ``fx_rates`` table.
+
+    ``rate`` is serialised as a string-form Decimal so JS callers don't
+    lose precision on exotic-pair micro-rates.
+    """
+
+    id: str
+    date: date
+    source_currency: str
+    target_currency: str
+    rate: Decimal
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FxRateIngestRow(BaseModel):
+    date: date
+    source_currency: str = Field(..., min_length=3, max_length=8)
+    target_currency: str = Field(..., min_length=3, max_length=8)
+    rate: Decimal = Field(..., gt=Decimal("0"))
+
+
+class FxRateBulkIngestRequest(BaseModel):
+    rows: list[FxRateIngestRow] = Field(..., min_length=1, max_length=2000)
+
+
+class FxRateUpsertResult(BaseModel):
+    inserted: int
+    updated: int
+
+
+# ---- Audit log ----
+class AuditLogDTO(BaseModel):
+    id: str
+    org_id: str
+    user_id: str | None = None
+    action: str
+    entity_type: str
+    entity_id: str | None = None
+    details: dict[str, Any] = Field(default_factory=dict)
+    request_id: str | None = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AuditLogListResponse(BaseModel):
+    items: list[AuditLogDTO]
+    next_cursor: str | None = None
