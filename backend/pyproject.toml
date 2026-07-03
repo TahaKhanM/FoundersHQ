@@ -1,0 +1,116 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["app"]
+
+[project]
+name = "foundershq-backend"
+version = "0.1.0"
+description = "FoundersHQ FastAPI backend"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "sqlalchemy>=2.0.0",
+    "greenlet>=3.0.0",
+    "asyncpg>=0.29.0",
+    "alembic>=1.13.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "bcrypt>=4.0.0,<4.1.0",
+    "python-multipart>=0.0.6",
+    "celery[redis]>=5.3.0",
+    "redis>=5.0.0",
+    "httpx>=0.26.0",
+    "openai>=1.0.0",
+    "python-dateutil>=2.8.2",
+    "numpy>=1.26.0",
+    "psycopg2-binary>=2.9.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.6.0",
+    "mypy>=1.10.0",
+    "types-python-dateutil>=2.9.0",
+    "aiosqlite>=0.20.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "integration: marks tests that require external infra (Redis, Postgres). Skip by default in unit runs.",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC", "RET", "SIM"]
+# E501 line length: handled by Black-style formatter, not strict here.
+# B008 default-arg call: needed for FastAPI Depends() patterns.
+# B904 raise-from: low-value noise on HTTPException re-raises.
+# E712 == True/False: required by SQLAlchemy filter expressions.
+# UP042 StrEnum: legacy enum patterns still common; will tighten later.
+ignore = ["E501", "B008", "B904", "E712", "UP042"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["ASYNC", "SIM222", "E741"]
+# F821 forward refs in Mapped["X"] strings are SQLAlchemy 2 style; ruff can't see them.
+"app/models/*" = ["F821"]
+# E402 module-level imports after dotenv() is the script pattern.
+"app/scripts/*" = ["E402", "E741"]
+# ASYNC109 Protocol stubs mirror redis-py signatures verbatim.
+"app/services/events/sse.py" = ["ASYNC109"]
+
+[tool.mypy]
+python_version = "3.11"
+strict_optional = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
+exclude = ["alembic/versions"]
+
+# Legacy routers and services predate strict typing. Phase 1+ will tighten
+# each module as it's touched. New phase-0.B infrastructure (middleware/,
+# services/events/, utils/audit, utils/errors, utils/org_scope, models/
+# events_outbox, api/routers/events) is held to the default strict-ish bar.
+[[tool.mypy.overrides]]
+module = [
+    "app.api.routers.customers",
+    "app.api.routers.dashboard",
+    "app.api.routers.funding",
+    "app.api.routers.ingest",
+    "app.api.routers.integrations",
+    "app.api.routers.invoices",
+    "app.api.routers.llm",
+    "app.api.routers.notifications",
+    "app.api.routers.org",
+    "app.api.routers.runway",
+    "app.api.routers.search",
+    "app.api.routers.spending",
+    "app.models.org",
+    "app.models.user",
+    "app.services.dashboard.*",
+    "app.services.funding.*",
+    "app.services.ingestion.*",
+    "app.services.invoices.*",
+    "app.services.llm.*",
+    "app.services.notifications.*",
+    "app.services.runway.*",
+    "app.services.spending.*",
+    "app.tasks.*",
+]
+ignore_errors = true
