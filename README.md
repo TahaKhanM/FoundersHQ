@@ -1,126 +1,28 @@
 # FoundersHQ
 
-FoundersHQ is a financial-planning prototype for early-stage startups. It imports
-transactions and invoices, turns them into spending and collection views, projects
-cash under explicit assumptions and keeps a record of changes. A FastAPI backend
-owns the calculations and authorization; a Next.js frontend provides the dashboard,
-invoice workflow and planning screens.
+A startup financial-planning application with a FastAPI backend and Next.js dashboard. It turns transactions and invoices into cash-flow forecasts, spending breakdowns and collection priorities. Calculations use Decimal arithmetic and retain the records behind each forecast.
 
-Its strongest technical idea is to keep **financial calculations separate from
-language-model explanations**. Cash projections are reproducible from stored inputs.
-Explanations are checked against a supplied facts payload and allowed record IDs.
-The distinction matters because a persuasive explanation is not evidence that a
-number is correct.
+The backend handles organisation access, financial calculations and audit records. The frontend provides onboarding, invoice management and scenario screens, including a mock mode for exploring the interface without running the services.
 
-## What to inspect
+## Engineering work
 
-| Area | Implementation | What it demonstrates |
-| --- | --- | --- |
-| Cash planning | [Forecast route](backend/app/api/routers/runway.py), [history baseline](backend/app/services/runway/history.py), [cash simulation](backend/app/services/runway/forecast.py) | Decimal arithmetic, explicit assumptions, evidence retention and missing-data handling |
-| Organization access | [Dependencies](backend/app/deps.py), [member administration](backend/app/api/routers/org.py) | Tenant scoping, role gates, owner controls and authorization tests |
-| Invoice operations | [Invoice routes](backend/app/api/routers/invoices.py), [services](backend/app/services/invoices) | Payment heuristics, collection priorities and a recorded follow-up workflow |
-| Explanation validation | [LLM guardrails](backend/app/services/llm/guardrails.py) | Numeric/citation consistency checks around an optional external model |
-| User interface | [Frontend](frontend), [API layer](frontend/lib/api) | Typed API models, SWR data fetching, reusable finance components and a standalone mock mode |
-| Verification | [Backend tests](backend/tests), [CI](.github/workflows) | Deterministic service tests and actual authenticated API boundary tests |
+| Area | Implementation |
+| --- | --- |
+| Cash forecasting | [History baseline](backend/app/services/runway/history.py) and [cash simulation](backend/app/services/runway/forecast.py) use eight complete weeks of transactions, include inactive weeks and exclude future records. |
+| Organisation access | [Request dependencies](backend/app/deps.py) and [membership routes](backend/app/api/routers/org.py) enforce tenant boundaries and member roles. Ownership changes lock the organisation row in PostgreSQL. |
+| Invoice workflow | [Invoice services](backend/app/services/invoices) track payment status, collection priorities and follow-up actions. |
+| Explanation checks | [Guardrails](backend/app/services/llm/guardrails.py) check optional model explanations against supplied numbers and record IDs. The financial services calculate the figures. |
+| API integration | The [frontend API layer](frontend/lib/api) uses typed models and SWR. Decimal values arrive as strings to preserve precision. |
 
-The application also includes onboarding, spending categories and recurring
-commitments, funding-route heuristics, evidence-linked insights, notifications,
-search, audit export and an FX-rate table. The
-[design documents](docs/ARCHITECTURE.md) describe a wider intended product; they are
-not a list of completed integrations.
+## Forecast design
 
-## How data moves through the application
+The model starts from recorded cash and repeats the mean weekly receipts and payments over a chosen horizon. Users can change either flow with a multiplier. Each week applies `ending = starting + receipts - payments`; the first negative ending balance is the crash week, indexed from zero.
 
-```mermaid
-flowchart LR
-    F[Next.js UI] -->|Bearer token| A[FastAPI and organization dependencies]
-    C[CSV imports] --> W[Celery worker]
-    A --> D[(PostgreSQL)]
-    W --> D
-    D --> S[Deterministic financial services]
-    S --> A
-    A --> L[Optional explanation service]
-    L --> V[Number and citation checks]
-    V --> F
-    A --> U[Audit records and notifications]
-```
+For example, £220 of cash and £800 of payments over eight complete weeks give a £100 weekly outflow. Cash first becomes negative in week index 2. The stress case reduces receipts by 20% and raises payments by 20%, moving that point to week index 1.
 
-Routers load organization-scoped records and call domain services. SQLAlchemy and
-Alembic provide the schema and migration history. Financial amounts use `Decimal`
-and fixed-precision database columns. The frontend consumes serialized decimal
-strings rather than being the authority for financial calculations.
+Stored forecasts retain input record IDs, the cash-profile timestamp and the method version. Invoice totals are kept separate from transaction receipts to avoid double counting. Mixed currencies are rejected until conversion provenance is supported across every aggregate.
 
-The service layer is intentionally mixed: arithmetic helpers are pure, while
-retrieval, FX lookup, audit and event publishing involve I/O. Most API tests run
-against SQLite with compatibility adapters; PostgreSQL integration tests and
-migrations run separately. That makes local feedback fast, but only the latter can
-validate database-specific locking and schema behavior.
-
-## Forecast methodology
-
-The forecast is a transparent planning baseline, not a trained prediction model:
-
-1. Read the organization's recorded cash balance and its currency from the financial
-   profile. A missing balance or mismatched currency stops the request.
-2. Use the **previous eight complete calendar weeks** of transactions. Positive
-   amounts are receipts and negative amounts are payments. Include zero-activity
-   weeks in the denominator; exclude the current partial week and future records.
-3. Repeat the mean weekly receipts and payments over the requested horizon. Apply
-   optional receipt/payment multipliers, including zero.
-4. Roll cash forward with `ending = starting + receipts - payments`. The first week
-   ending below zero is the reported crash week, indexed from zero.
-5. Compute a disclosed stress case with receipts reduced by 20% and payments
-   increased by 20%. This is a sensitivity scenario, not a confidence interval.
-
-Each stored forecast retains the input record IDs, cash-profile update time,
-lookback, calculation date and method version. For example, $220 starting cash and
-$800 of payments across eight complete weeks imply $100 weekly payments: the base
-case first becomes negative in week index 2 and the stress case in week index 1.
-
-This baseline avoids fitting a complex model to sparse startup data. Its cost is
-that one-off costs, seasonality, future hiring and payment delays are not modeled
-unless represented through explicit scenario assumptions. Imported invoice amounts
-are **not added to historical transaction receipts**, avoiding obvious double
-counting. Invoice payment heuristics are a separate workflow. Saved scenario
-application and detailed causal attribution are unfinished; unsupported application
-returns an explicit error.
-
-The current reports and forecasts require one organization base currency. FX rates
-and conversion helpers exist, but historical target-currency provenance is not yet
-wired consistently through every aggregate. Mixed currencies therefore produce a
-validation error instead of a misleading sum.
-
-## Authorization and reliability
-
-Shared financial mutations require a member, admin or owner; viewers can read.
-Role checks use the same organization resolved for the request. Purging organization
-data is owner-only and an admin cannot promote themselves to owner or change an
-owner's membership. Ownership changes serialize on the organization row in
-PostgreSQL. The MVP selects a user's first membership as their default organization;
-there is no full organization-switching workflow.
-
-Password-reset and invitation secrets are hashed at rest. Consuming a token uses a
-conditional `UPDATE ... RETURNING`, so checking validity and marking it consumed
-happen in one database operation. Import-job results require a matching,
-organization-scoped enqueue audit record. CSV uploads are limited to 10 MiB.
-
-Production configuration rejects the default/short JWT signing secret and debug
-mode. This is still a prototype: reset/invitation email delivery is unfinished,
-logout does not revoke previously issued JWTs and public authentication endpoints
-need abuse controls before internet deployment. Development responses can expose
-reset/invitation tokens for local testing; never run a public instance with
-`ENV=dev`.
-
-The LLM guardrail rejects unknown numeric values and record citations, excludes
-UUID digits from financial checks and requires a citation when it detects causal
-phrasing. It does **not** establish that a cited record supports a sentence, catch
-all paraphrased causal claims or prevent a correct number from being used in the
-wrong context. A stored facts hash aids comparison; it does not prove semantic
-correctness.
-
-Audit rows and deterministic event types are implemented. The durable outbox exists,
-but many mutation routes still use an in-process best-effort event queue. End-to-end
-transactional delivery and recovery across multiple workers remain incomplete.
+This is a planning baseline. It does not fit seasonality or predict hiring and payment delays. The stress case is a sensitivity calculation rather than a confidence interval.
 
 ## Run locally
 
@@ -206,20 +108,13 @@ pnpm audit --prod
 
 Regression tests cover malformed credentials, role escalation, read/write tenant
 boundaries, token reuse, exact financial examples, future-data exclusion,
-zero-valued scenarios and persisted forecast reads. Mypy currently exempts several
-legacy modules; passing it is not a claim of strict typing across the whole backend.
+zero-valued scenarios and persisted forecast reads. Several legacy modules remain outside the mypy checks.
 The dependency audit workflow fails on findings instead of suppressing its exit code.
 
-## Project history and remaining scope
+## Status and project history
 
-FoundersHQ began as a fintech hackathon project associated with D. E. Shaw and
-Capital One. The [original project write-up](https://github.com/TahaKhanM/FoundersHQ/blob/6e74bec8cbcdb28e1403fa309e31538ecd7b6c07/README.md#context)
-records a top-five finish among more than 150 participants. The repository includes later backend and frontend work;
-current capabilities should not be attributed wholesale to the original submission
-or treated as a complete record of individual team contributions.
+FoundersHQ began as a fintech hackathon project associated with D. E. Shaw and Capital One. The [original team write-up](https://github.com/TahaKhanM/FoundersHQ/blob/6e74bec8cbcdb28e1403fa309e31538ecd7b6c07/README.md#context) records a top-five finish among more than 150 participants. The repository includes subsequent backend and frontend development.
 
-The September 2026 review repaired authorization gaps, placeholder forecasting,
-spending chronology and setup/package defects and added representative API tests.
-It did not turn the prototype into an accounting system. Bank/accounting sync,
-receipt OCR, reliable email delivery, production session controls, complete
-multi-currency reporting and an evaluated forecasting model remain future work.
+The prototype still needs bank integrations, reliable email delivery, session revocation and complete multi-currency reporting. Some events use an in-process queue, so delivery across workers is unfinished. Public authentication also needs abuse controls before deployment. Model explanation checks establish numeric consistency but cannot establish whether a citation supports a claim.
+
+[Architecture](docs/ARCHITECTURE.md) · [Backend tests](backend/tests) · [CI workflows](.github/workflows)
