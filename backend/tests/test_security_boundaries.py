@@ -22,7 +22,10 @@ def test_malformed_signed_subject_is_unauthorized(client, subject):
     {"env": "prod", "secret_key": "dev-secret"},
     {"env": "prod", "secret_key": "a" * 40, "debug": True},
 ])
-def test_unsafe_production_configuration_is_rejected(settings):
+def test_unsafe_production_configuration_is_rejected(settings, monkeypatch):
+    # _env_file=None disables dotenv loading, not the runner's environment.
+    for name in ("SECRET_KEY", "DEBUG", "ENV"):
+        monkeypatch.delenv(name, raising=False)
     with pytest.raises(ValidationError):
         Settings(_env_file=None, **settings)
 
