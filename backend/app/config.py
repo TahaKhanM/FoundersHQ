@@ -1,6 +1,8 @@
 """Application configuration from environment."""
 from functools import lru_cache
+from typing import Literal
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,7 +14,7 @@ class Settings(BaseSettings):
     # App
     app_name: str = "FoundersHQ"
     debug: bool = False
-    env: str = "dev"  # "dev" | "test" | "prod" — gates dev-only response fields
+    env: Literal["dev", "test", "prod"] = "dev"
 
     # Database
     database_url: str = "postgresql+asyncpg://foundershq:foundershq@db:5432/foundershq"
@@ -22,8 +24,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
 
     # JWT
-    secret_key: str = "change-me-in-production-use-env"
-    algorithm: str = "HS256"
+    secret_key: str = "local-development-only-change-before-deployment"
+    algorithm: Literal["HS256"] = "HS256"
     access_token_expire_minutes: int = 60 * 24  # 24h
 
     # Celery
@@ -42,6 +44,15 @@ class Settings(BaseSettings):
 
     # Action queue: invoice considered "touched" (completed) if last touch within N days
     action_queue_completion_days: int = 7
+
+    @model_validator(mode="after")
+    def validate_production_security(self) -> "Settings":
+        if self.env == "prod":
+            if self.secret_key == "local-development-only-change-before-deployment" or len(self.secret_key) < 32:
+                raise ValueError("Production requires a unique SECRET_KEY of at least 32 characters")
+            if self.debug:
+                raise ValueError("DEBUG must be false in production")
+        return self
 
 
 @lru_cache

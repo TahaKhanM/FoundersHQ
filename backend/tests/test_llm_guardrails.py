@@ -56,3 +56,21 @@ def test_extract_numbers():
     # distinguishable; matchers downstream strip % when comparing.
     nums = extract_numbers_from_text("50.5% increase")
     assert "50.5%" in nums or "50.5" in nums
+
+
+def test_combined_validation_accepts_decimal_amount_and_record_citation():
+    from decimal import Decimal
+    evidence = "a1b2c3d4-e5f6-4789-a012-345678901234"
+    valid, _, error = validate_llm_response(
+        f"Costs rose because of transaction {evidence}, amount 1,250.00.",
+        {"amount": Decimal("1250")}, {evidence},
+    )
+    assert valid and error is None
+
+
+def test_response_cannot_change_sign_or_fabricate_citations():
+    assert not validate_llm_response("The amount is -100.", {"amount": 100}, set())[0]
+    assert not validate_llm_response(
+        "See a1b2c3d4-e5f6-4789-a012-345678901234.", {}, set(),
+        reject_on_unknown_numbers=False,
+    )[0]

@@ -1,6 +1,8 @@
 name: security
 
 on:
+  push:
+    branches: [main]
   pull_request:
   schedule:
     - cron: "0 6 * * 1"   # Monday 06:00 UTC weekly audit
@@ -10,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -19,19 +23,19 @@ jobs:
         working-directory: backend
         run: |
           pip install pip-audit
-          pip-audit --strict --requirement requirements.txt || true
+          pip-audit --strict --requirement requirements.txt
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 10.30.3
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: pnpm audit (frontend)
         working-directory: frontend
-        run: pnpm audit --audit-level high || true
+        run: pnpm audit --prod --audit-level high
 
       - name: GitLeaks
         uses: gitleaks/gitleaks-action@v2

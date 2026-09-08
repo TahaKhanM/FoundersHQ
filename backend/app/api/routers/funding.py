@@ -14,7 +14,7 @@ from app.api.schemas import (
     ImprovementItemDTO,
     PaginatedResponse,
 )
-from app.deps import CurrentOrg, CurrentUser, DbSession
+from app.deps import CurrentOrg, CurrentUser, DbSession, WritableOrg
 from app.models import funding as fund_models
 from app.services.events import EventType, publish_event_best_effort
 from app.services.funding.improvements import improvement_items
@@ -96,7 +96,7 @@ async def list_opportunities(
 
 
 @router.post("/opportunities/save")
-async def save_opportunity(body: FundingOpportunitySaveRequest, org: CurrentOrg, session: DbSession, user: CurrentUser):
+async def save_opportunity(body: FundingOpportunitySaveRequest, org: WritableOrg, session: DbSession, user: CurrentUser):
     from app.models.base import gen_uuid
     existing = await session.execute(
         select(fund_models.UserSavedOpportunity).where(

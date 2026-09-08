@@ -18,7 +18,7 @@ from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import select
 
 from app.api.schemas import InsightDTO, InsightListResponse, InsightRunResponse
-from app.deps import CurrentOrg, CurrentUser, DbSession, requires_role
+from app.deps import CurrentOrg, CurrentUser, DbSession, WritableOrg, requires_role
 from app.models.insight import Insight
 from app.models.org import Membership
 from app.services.events import publish_event_best_effort
@@ -66,7 +66,7 @@ async def list_insights(
 @router.post("/{insight_id}/dismiss", response_model=InsightDTO)
 async def dismiss_insight(
     insight_id: str,
-    org: CurrentOrg,
+    org: WritableOrg,
     user: CurrentUser,
     session: DbSession,
 ):
@@ -118,7 +118,7 @@ async def dismiss_insight(
 
 @router.post("/run", response_model=InsightRunResponse)
 async def trigger_run(
-    org: CurrentOrg,
+    org: WritableOrg,
     user: CurrentUser,
     session: DbSession,
     _membership: Membership = requires_role("owner", "admin"),

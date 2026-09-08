@@ -15,7 +15,7 @@ class Commitment(Base):
     id: Mapped[str] = mapped_column(PG_UUID(as_uuid=False), primary_key=True, default=gen_uuid)
     org_id: Mapped[str] = mapped_column(PG_UUID(as_uuid=False), ForeignKey("orgs.id", ondelete="CASCADE"), nullable=False, index=True)
     merchant_canonical: Mapped[str] = mapped_column(String(512), nullable=False)
-    frequency: Mapped[str] = mapped_column(String(32), nullable=False)  # weekly/monthly/annual
+    frequency: Mapped[str] = mapped_column(String(32), nullable=False)  # weekly/biweekly/monthly/annual
     typical_amount: Mapped[Decimal] = mapped_column(Numeric(18, 4), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     last_seen_date: Mapped[date] = mapped_column(Date, nullable=False)

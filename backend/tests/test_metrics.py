@@ -89,3 +89,23 @@ def test_weekly_series_reconciles_to_period_total():
     mismatch2, sum_weekly2 = reconcile_weekly_to_period(series2, period_total2)
     assert not mismatch2
     assert sum_weekly2 == period_total2 == Decimal("100")
+
+
+def test_weekly_buckets_bound_dates_and_preserve_zero_activity():
+    from datetime import date
+    by_week = compute_weekly_outflows_by_week([
+        (date(2026, 9, 1), Decimal("-1000")),
+        (date(2026, 9, 8), Decimal("-10")),
+        (date(2026, 9, 9), Decimal("-9000")),
+        (date(2025, 1, 1), Decimal("-9000")),
+    ], date(2026, 9, 8), 3)
+    assert by_week == {date(2026, 8, 24): Decimal(0), date(2026, 8, 31): Decimal(1000),
+                       date(2026, 9, 7): Decimal(10)}
+
+
+def test_commitment_frequency_is_converted_to_monthly_equivalent():
+    from app.services.spending.metrics import monthly_commitment_amount
+    assert monthly_commitment_amount(Decimal(120), "monthly") == 120
+    assert monthly_commitment_amount(Decimal(120), "annual") == 10
+    assert monthly_commitment_amount(Decimal(12), "weekly") == 52
+    assert monthly_commitment_amount(Decimal(12), "biweekly") == 26

@@ -10,7 +10,7 @@ import hashlib
 import secrets
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.invitation import Invitation
@@ -59,12 +59,16 @@ async def verify_invitation_token(session: AsyncSession, raw: str, *, now: datet
 async def consume_invitation_token(session: AsyncSession, raw: str, *, now: datetime | None = None) -> Invitation | None:
     """Verify + mark accepted in a single atomic step. Returns the invitation or None."""
     now = now or _utcnow()
-    inv = await verify_invitation_token(session, raw, now=now)
-    if inv is None:
-        return None
-    inv.accepted_at = now
-    await session.flush()
-    return inv
+    result = await session.execute(
+        update(Invitation)
+        .where(Invitation.token_hash == hash_token(raw))
+        .where(Invitation.accepted_at.is_(None), Invitation.revoked_at.is_(None))
+        .where(Invitation.expires_at > now)
+        .values(accepted_at=now)
+        .returning(Invitation)
+        .execution_options(synchronize_session=False, populate_existing=True)
+    )
+    return result.scalar_one_or_none()
 
 
 async def verify_reset_token(session: AsyncSession, raw: str, *, now: datetime | None = None) -> PasswordResetToken | None:
@@ -86,9 +90,12 @@ async def verify_reset_token(session: AsyncSession, raw: str, *, now: datetime |
 async def consume_reset_token(session: AsyncSession, raw: str, *, now: datetime | None = None) -> PasswordResetToken | None:
     """Verify + mark consumed atomically."""
     now = now or _utcnow()
-    prt = await verify_reset_token(session, raw, now=now)
-    if prt is None:
-        return None
-    prt.consumed_at = now
-    await session.flush()
-    return prt
+    result = await session.execute(
+        update(PasswordResetToken)
+        .where(PasswordResetToken.token_hash == hash_token(raw))
+        .where(PasswordResetToken.consumed_at.is_(None), PasswordResetToken.expires_at > now)
+        .values(consumed_at=now)
+        .returning(PasswordResetToken)
+        .execution_options(synchronize_session=False, populate_existing=True)
+    )
+    return result.scalar_one_or_none()

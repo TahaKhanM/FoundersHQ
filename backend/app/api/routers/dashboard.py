@@ -11,7 +11,7 @@ from app.api.schemas import (
     HealthScoreBreakdownItem,
     HealthScoreResponse,
 )
-from app.deps import CurrentOrg, DbSession
+from app.deps import DbSession, ReportingOrg
 from app.models import commitment as comm_models
 from app.models import funding as fund_models
 from app.models import invoice as inv_models
@@ -35,7 +35,7 @@ router = APIRouter()
 
 
 @router.get("/metrics", response_model=DashboardMetricsDTO)
-async def get_dashboard_metrics(org: CurrentOrg, session: DbSession):
+async def get_dashboard_metrics(org: ReportingOrg, session: DbSession):
     """Aggregated dashboard metrics from spending + invoices."""
     today = date.today()
     end_30 = period_30d_end(today)
@@ -44,6 +44,7 @@ async def get_dashboard_metrics(org: CurrentOrg, session: DbSession):
         select(txn_models.Transaction.txn_date, txn_models.Transaction.amount).where(
             txn_models.Transaction.org_id == org.id,
             txn_models.Transaction.txn_date >= end_90,
+            txn_models.Transaction.txn_date <= today,
         )
     )
     rows = txn_result.all()
@@ -55,10 +56,10 @@ async def get_dashboard_metrics(org: CurrentOrg, session: DbSession):
     out_90 = total_outflow(amounts_90)
     in_90 = total_inflow(amounts_90)
     nb_90 = net_burn(out_90, in_90)
-    by_week = compute_weekly_outflows_by_week([(r[0], r[1]) for r in rows], today, 9)
-    week_list = sorted(by_week.values(), reverse=True)
-    baseline = compute_baseline_weekly_outflow(week_list, 1) if week_list else Decimal("0")
-    current_week = week_list[0] if week_list else Decimal("0")
+    by_week = compute_weekly_outflows_by_week([(r[0], r[1]) for r in rows], today, 14)
+    week_list = [by_week[week] for week in sorted(by_week)]
+    baseline = compute_baseline_weekly_outflow(week_list[-9:], 1) if week_list else Decimal("0")
+    current_week = week_list[-1] if week_list else Decimal("0")
     creep = spend_creep_pct(baseline, current_week) if baseline else None
     if creep is None or creep == 0:
         spend_creep_status = "stable"
@@ -106,7 +107,7 @@ async def get_dashboard_metrics(org: CurrentOrg, session: DbSession):
 
 
 @router.get("/alerts", response_model=list[AlertDTO])
-async def get_dashboard_alerts(org: CurrentOrg, session: DbSession):
+async def get_dashboard_alerts(org: ReportingOrg, session: DbSession):
     """Combined alerts for dashboard (spending + invoice overdue)."""
     today = date.today()
     end_90 = today - timedelta(days=90)
@@ -114,13 +115,14 @@ async def get_dashboard_alerts(org: CurrentOrg, session: DbSession):
         select(txn_models.Transaction.txn_date, txn_models.Transaction.amount).where(
             txn_models.Transaction.org_id == org.id,
             txn_models.Transaction.txn_date >= end_90,
+            txn_models.Transaction.txn_date <= today,
         )
     )
     rows = txn_result.all()
-    by_week = compute_weekly_outflows_by_week([(r[0], r[1]) for r in rows], today, 9)
-    week_list = sorted(by_week.values(), reverse=True)
-    baseline = compute_baseline_weekly_outflow(week_list, 1) if week_list else Decimal("0")
-    current_week = week_list[0] if week_list else Decimal("0")
+    by_week = compute_weekly_outflows_by_week([(r[0], r[1]) for r in rows], today, 14)
+    week_list = [by_week[week] for week in sorted(by_week)]
+    baseline = compute_baseline_weekly_outflow(week_list[-9:], 1) if week_list else Decimal("0")
+    current_week = week_list[-1] if week_list else Decimal("0")
     creep = spend_creep_pct(baseline, current_week) if baseline else None
     alerts = spend_creep_alerts(creep, 0.25, [])
     overdue_result = await session.execute(
@@ -152,7 +154,7 @@ async def get_dashboard_alerts(org: CurrentOrg, session: DbSession):
 
 
 @router.get("/health-score", response_model=HealthScoreResponse)
-async def get_health_score(org: CurrentOrg, session: DbSession):
+async def get_health_score(org: ReportingOrg, session: DbSession):
     """Deterministic health score. Cash balance (C0) from financial_profile only."""
     notes = []
     today = date.today()
@@ -170,6 +172,7 @@ async def get_health_score(org: CurrentOrg, session: DbSession):
         select(txn_models.Transaction.txn_date, txn_models.Transaction.amount).where(
             txn_models.Transaction.org_id == org.id,
             txn_models.Transaction.txn_date >= end_90,
+            txn_models.Transaction.txn_date <= today,
         )
     )
     txn_rows = txn_rows.all()

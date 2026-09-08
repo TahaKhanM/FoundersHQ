@@ -162,33 +162,40 @@ async def test_sse_delivers_events_after_subscription(
     )
 
     _override_app(async_session, seeded_org, seeded_user)
+    received = asyncio.Queue()
+    received.put_nowait({"type": "http.request", "body": b"", "more_body": False})
+    subscribed = asyncio.Event()
+    delivered = asyncio.Event()
+
+    async def send(message):
+        if message["type"] == "http.response.start":
+            assert message["status"] == 200
+        if message["type"] == "http.response.body":
+            body = message.get("body", b"").decode()
+            if ": connected" in body:
+                subscribed.set()
+            for line in body.splitlines():
+                if line.startswith("data:") and json.loads(line[5:]).get("type") == "ping":
+                    delivered.set()
+
+    # ASGITransport buffers a response until it ends; SSE deliberately never ends.
+    # Drive the real ASGI streaming boundary and signal a client disconnect explicitly.
+    scope = {"type": "http", "asgi": {"version": "3.0", "spec_version": "2.3"},
+             "method": "GET", "path": "/events", "raw_path": b"/events",
+             "query_string": b"", "headers": [], "scheme": "http",
+             "server": ("test", 80), "client": ("127.0.0.1", 12345),
+             "http_version": "1.1", "root_path": ""}
+    stream = asyncio.create_task(app(scope, received.get, send))
     try:
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client, client.stream("GET", "/events") as resp:
-            assert resp.status_code == 200
-
-            async def emit() -> None:
-                await asyncio.sleep(0.1)
-                await publish_event(
-                    async_session,
-                    redis=redis,
-                    org_id=seeded_org.id,
-                    type="ping",
-                    payload={"ok": True},
-                )
-                await async_session.commit()
-
-            asyncio.create_task(emit())
-
-            got_event = False
-            async for line in resp.aiter_lines():
-                if line.startswith("data:"):
-                    msg = json.loads(line[5:].strip())
-                    if msg.get("type") == "ping":
-                        got_event = True
-                        break
-            assert got_event
+        await asyncio.wait_for(subscribed.wait(), 5)
+        await publish_event(async_session, redis=redis, org_id=seeded_org.id,
+                            type="ping", payload={"ok": True})
+        await async_session.commit()
+        await asyncio.wait_for(delivered.wait(), 5)
+        received.put_nowait({"type": "http.disconnect"})
+        await asyncio.wait_for(stream, 5)
     finally:
+        stream.cancel()
+        await asyncio.gather(stream, return_exceptions=True)
         _clear_overrides()
         await redis.aclose()
