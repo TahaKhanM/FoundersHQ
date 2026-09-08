@@ -8,7 +8,7 @@ from app.api.schemas import (
     ParsedInvoicePayload,
 )
 from app.config import get_settings
-from app.deps import CurrentOrg, DbSession
+from app.deps import DbSession, WritableOrg
 from app.models import funding as fund_models
 from app.models import invoice as inv_models
 from app.models.base import gen_uuid
@@ -19,7 +19,7 @@ router = APIRouter()
 @router.post("/funding/opportunities", response_model=FundingIngestStats)
 async def ingest_funding_opportunities(
     body: FundingOpportunitiesIngestRequest,
-    org: CurrentOrg,
+    org: WritableOrg,
     session: DbSession,
 ):
     created = updated = errors = 0
@@ -81,7 +81,7 @@ async def ingest_funding_opportunities(
 @router.post("/invoices/parsed")
 async def ingest_parsed_invoice(
     body: ParsedInvoicePayload,
-    org: CurrentOrg,
+    org: WritableOrg,
     session: DbSession,
 ):
     """Accept extracted invoice fields. If parse_confidence < threshold or missing required -> needs_review."""

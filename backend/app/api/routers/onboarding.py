@@ -30,7 +30,7 @@ from app.api.schemas import (
     OnboardingStepResponse,
     OrgDTO,
 )
-from app.deps import CurrentOrg, CurrentUser, DbSession, requires_role
+from app.deps import CurrentOrg, CurrentUser, DbSession, WritableOrg, requires_role
 from app.models.org import Membership, Org, Persona
 from app.scripts.seed_dev_data import seed_org
 from app.services.events import EventType
@@ -132,7 +132,7 @@ async def get_state(org: CurrentOrg) -> OnboardingStateDTO:
 async def post_step(
     n: Annotated[int, Path(ge=1, le=3)],
     body: Annotated[dict[str, Any], Body(...)],
-    org: CurrentOrg,
+    org: WritableOrg,
     user: CurrentUser,
     session: DbSession,
 ) -> OnboardingStepResponse:
@@ -185,7 +185,7 @@ async def post_step(
 
 @router.post("/complete", response_model=OnboardingCompleteResponse)
 async def post_complete(
-    org: CurrentOrg,
+    org: WritableOrg,
     user: CurrentUser,
     session: DbSession,
 ) -> OnboardingCompleteResponse:
@@ -239,7 +239,7 @@ async def post_complete(
 
 @router.post("/seed-sample-data", response_model=OnboardingSeedSampleResponse)
 async def post_seed_sample_data(
-    org: CurrentOrg,
+    org: WritableOrg,
     user: CurrentUser,
     session: DbSession,
     _membership: Membership = requires_role("owner"),

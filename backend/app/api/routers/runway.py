@@ -19,10 +19,14 @@ from app.api.schemas import (
     ScenarioCreate,
     WeeklyForecastRowDTO,
 )
-from app.deps import CurrentOrg, CurrentUser, DbSession
+from app.deps import CurrentOrg, CurrentUser, DbSession, WritableOrg
 from app.models import runway as rw_models
+from app.models.financial_profile import FinancialProfile
+from app.models.transaction import Transaction
 from app.services.events import EventType, publish_event_best_effort
 from app.services.runway.forecast import run_forecast
+from app.services.runway.history import LOOKBACK_WEEKS, historical_weekly_flows
+from app.services.runway.scenarios import apply_scenario_params
 from app.utils.audit import record_audit
 from app.utils.dates import week_start
 
@@ -40,29 +44,63 @@ def _safe_publish(org_id: str, event_type: EventType, payload: dict) -> None:
 @router.post("/forecast/compute", response_model=RunwayForecastFullResponse)
 async def compute_forecast(
     body: RunwayForecastRequest,
-    org: CurrentOrg,
+    org: WritableOrg,
     user: CurrentUser,
     session: DbSession,
 ):
     today = date.today()
     ws = week_start(today)
     horizon = body.horizon_weeks
-    cash_start = Decimal("100000")  # TODO from questionnaire
-    weekly_inflows = {ws + timedelta(days=7*i): Decimal("0") for i in range(horizon)}
-    weekly_outflows = {ws + timedelta(days=7*i): Decimal("5000") for i in range(horizon)}
-    rows, crash_base, crash_pess = run_forecast(cash_start, horizon, weekly_inflows, weekly_outflows, today)
+    if body.milestones:
+        raise HTTPException(422, "Create milestones through /runway/milestones; they do not alter cash flows")
+    profile = await session.scalar(select(FinancialProfile).where(FinancialProfile.org_id == org.id))
+    if profile is None or profile.cash_balance is None:
+        raise HTTPException(422, "Set a cash balance and currency through /ingest/questionnaire first")
+    if profile.currency != org.base_currency:
+        raise HTTPException(422, "Cash balance must be recorded in the organization base currency")
+    txns = list((await session.scalars(select(Transaction).where(
+        Transaction.org_id == org.id,
+        Transaction.txn_date >= ws - timedelta(weeks=LOOKBACK_WEEKS),
+        Transaction.txn_date < ws,
+    ).order_by(Transaction.txn_date, Transaction.id))).all())
+    if any(t.currency != org.base_currency for t in txns):
+        raise HTTPException(422, "This forecast requires history in one base currency; mixed currencies are not summed")
+    try:
+        inflow, outflow = historical_weekly_flows([(t.txn_date, t.amount) for t in txns], today)
+        weekly_outflows, weekly_inflows = apply_scenario_params(
+            {ws + timedelta(weeks=i): outflow for i in range(horizon)},
+            {ws + timedelta(weeks=i): inflow for i in range(horizon)}, body.scenario_params,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    cash_start = profile.cash_balance.quantize(Decimal("0.0001"))
+    rows, crash_base, _ = run_forecast(cash_start, horizon, weekly_inflows, weekly_outflows, today)
+    # A disclosed stress scenario, not a fitted confidence interval.
+    _, crash_pess, _ = run_forecast(
+        cash_start, horizon,
+        {w: (v * Decimal("0.8")).quantize(Decimal("0.0001")) for w, v in weekly_inflows.items()},
+        {w: (v * Decimal("1.2")).quantize(Decimal("0.0001")) for w, v in weekly_outflows.items()},
+        today,
+    )
+    for row in rows:
+        row["evidence_ids"] = [profile.id, *(t.id for t in txns)]
+        row["flags"] = ["historical_average_8_complete_weeks", "stress_receipts_minus_20pct_costs_plus_20pct"]
     from app.models.base import gen_uuid
     fore = rw_models.RunwayForecast(
         id=gen_uuid(),
         org_id=org.id,
         horizon_weeks=horizon,
         cash_start=cash_start,
-        currency="USD",
+        currency=org.base_currency,
         crash_week_base=crash_base,
         crash_week_pess=crash_pess,
         cash_weeks_base=float(crash_base) if crash_base is not None else None,
         cash_weeks_pess=float(crash_pess) if crash_pess is not None else None,
-        scenario_params=body.scenario_params,
+        scenario_params={
+            **(body.scenario_params or {}), "method": "historical_average_v1",
+            "as_of": today.isoformat(), "lookback_weeks": LOOKBACK_WEEKS,
+            "cash_balance_updated_at": profile.updated_at.isoformat(),
+        },
     )
     session.add(fore)
     await session.flush()
@@ -123,7 +161,7 @@ async def get_forecast(forecast_id: str, org: CurrentOrg, session: DbSession):
         select(rw_models.ForecastRow).where(
             rw_models.ForecastRow.forecast_id == forecast_id,
             rw_models.ForecastRow.org_id == org.id,
-        )
+        ).order_by(rw_models.ForecastRow.week_start)
     )
     rows = rows_result.scalars().all()
     return RunwayForecastFullResponse(
@@ -135,7 +173,7 @@ async def get_forecast(forecast_id: str, org: CurrentOrg, session: DbSession):
 
 @router.post("/scenarios")
 async def create_scenario(
-    body: ScenarioCreate, org: CurrentOrg, user: CurrentUser, session: DbSession
+    body: ScenarioCreate, org: WritableOrg, user: CurrentUser, session: DbSession
 ):
     from app.models.base import gen_uuid
     s = rw_models.Scenario(id=gen_uuid(), org_id=org.id, name=body.name, params=body.params)
@@ -159,8 +197,8 @@ async def create_scenario(
 
 
 @router.post("/scenarios/apply")
-async def apply_scenario(org: CurrentOrg, session: DbSession):
-    return {"message": "Apply scenario (no persistence unless requested)"}
+async def apply_scenario(org: WritableOrg, session: DbSession):
+    raise HTTPException(501, "Pass scenario_params to /runway/forecast/compute; applying saved scenarios is not implemented")
 
 
 @router.get("/milestones", response_model=list[MilestoneDTO])
@@ -171,7 +209,7 @@ async def list_milestones(org: CurrentOrg, session: DbSession):
 
 @router.post("/milestones", response_model=MilestoneDTO)
 async def create_milestone(
-    body: MilestoneCreate, org: CurrentOrg, user: CurrentUser, session: DbSession
+    body: MilestoneCreate, org: WritableOrg, user: CurrentUser, session: DbSession
 ):
     from app.models.base import gen_uuid
     m = rw_models.Milestone(
@@ -205,7 +243,7 @@ async def create_milestone(
 async def patch_milestone(
     milestone_id: str,
     body: MilestonePatch,
-    org: CurrentOrg,
+    org: WritableOrg,
     user: CurrentUser,
     session: DbSession,
 ):
@@ -244,7 +282,7 @@ async def patch_milestone(
 
 @router.delete("/milestones/{milestone_id}", status_code=204)
 async def delete_milestone(
-    milestone_id: str, org: CurrentOrg, user: CurrentUser, session: DbSession
+    milestone_id: str, org: WritableOrg, user: CurrentUser, session: DbSession
 ):
     result = await session.execute(
         select(rw_models.Milestone).where(

@@ -4,11 +4,11 @@ from datetime import date, timedelta
 
 
 def period_30d_end(reference: date) -> date:
-    return reference - timedelta(days=30)
+    return reference - timedelta(days=29)
 
 
 def period_90d_end(reference: date) -> date:
-    return reference - timedelta(days=90)
+    return reference - timedelta(days=89)
 
 
 def week_start(d: date) -> date:

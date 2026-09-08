@@ -131,7 +131,7 @@ class AcceptInviteRequest(BaseModel):
 # ---- Org: invitations + members ----
 class InvitationCreate(BaseModel):
     email: str
-    role: str = Field(..., pattern="^(admin|member)$")
+    role: str = Field(..., pattern="^(admin|member|viewer)$")
 
 
 class InvitationDTO(BaseModel):
@@ -159,7 +159,7 @@ class MembershipDTO(BaseModel):
 
 
 class MembershipPatch(BaseModel):
-    role: str = Field(..., pattern="^(owner|admin|member)$")
+    role: str = Field(..., pattern="^(owner|admin|member|viewer)$")
 
 
 # ---- Ingest ----
@@ -423,6 +423,8 @@ class RunwayForecastRequest(BaseModel):
 
 
 class WeeklyForecastRowDTO(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     week_start: date
     starting_cash: Decimal
     inflows: Decimal

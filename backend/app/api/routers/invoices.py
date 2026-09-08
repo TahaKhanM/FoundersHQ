@@ -23,7 +23,7 @@ from app.api.schemas import (
     TouchLogDTO,
 )
 from app.config import get_settings
-from app.deps import CurrentOrg, CurrentUser, CurrentUserOptional, DbSession, get_redis
+from app.deps import CurrentOrg, CurrentUser, CurrentUserOptional, DbSession, WritableOrg, get_redis
 from app.models import invoice as inv_models
 from app.services.events import (
     EventType,
@@ -270,7 +270,7 @@ async def get_invoice(invoice_id: str, org: CurrentOrg, session: DbSession):
 @router.post("/touches", response_model=TouchLogDTO)
 async def create_touch(
     body: TouchLogCreate,
-    org: CurrentOrg,
+    org: WritableOrg,
     session: DbSession,
     user: CurrentUserOptional = None,
 ):
@@ -322,7 +322,7 @@ async def create_touch(
 
 
 @router.post("/templates", response_model=list[InvoiceTemplateItem])
-async def get_templates(body: InvoiceTemplatesRequest, org: CurrentOrg, session: DbSession):
+async def get_templates(body: InvoiceTemplatesRequest, org: WritableOrg, session: DbSession):
     out = []
     for inv_id in body.invoice_ids:
         out.append(InvoiceTemplateItem(
@@ -353,7 +353,7 @@ async def get_parsing_job(job_id: str, org: CurrentOrg, session: DbSession):
 async def confirm_parsing_job(
     job_id: str,
     body: InvoiceParsingConfirmRequest,
-    org: CurrentOrg,
+    org: WritableOrg,
     user: CurrentUser,
     session: DbSession,
     redis=Depends(get_redis),

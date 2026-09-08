@@ -2,6 +2,7 @@
 import hashlib
 import json
 import re
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 CAUSAL_PATTERNS = re.compile(
@@ -46,7 +47,7 @@ def extract_numbers_from_text(text: str) -> set[str]:
     punctuation ("100.") isn't captured as part of the number.
     """
     # Match numbers: integers, decimals, percentages, comma-grouped thousands.
-    pattern = r"\d{1,3}(?:,\d{3})+(?:\.\d+)?%?|\d+(?:\.\d+)?%?"
+    pattern = r"-?(?:\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)%?"
     return set(re.findall(pattern, text))
 
 
@@ -55,7 +56,9 @@ def numbers_in_facts_payload(payload: dict[str, Any]) -> set[str]:
     nums = set()
 
     def collect(obj: Any) -> None:
-        if isinstance(obj, (int, float)):
+        if isinstance(obj, bool):
+            return
+        if isinstance(obj, (int, float, Decimal)):
             nums.add(str(obj))
             nums.add(f"{obj:.2f}" if isinstance(obj, float) else str(obj))
         elif isinstance(obj, dict):
@@ -71,6 +74,14 @@ def numbers_in_facts_payload(payload: dict[str, Any]) -> set[str]:
     return nums
 
 
+def _numeric_value(token: str) -> Decimal | None:
+    try:
+        value = Decimal(token.replace(",", "").rstrip("%"))
+        return value if value.is_finite() else None
+    except InvalidOperation:
+        return None
+
+
 def validate_llm_response(
     response_text: str,
     facts_payload: dict[str, Any],
@@ -84,12 +95,15 @@ def validate_llm_response(
     """
     disclaimers = []
     # Numbers: only those in facts
-    nums_in_response = extract_numbers_from_text(response_text)
-    nums_in_facts = numbers_in_facts_payload(facts_payload)
+    cited = set(UUID_RE.findall(response_text))
+    if not cited.issubset(allowed_evidence_ids):
+        return False, [], "Response cites an evidence ID outside the allowed set"
+    # UUID digits identify records; they are not financial claims. Remove only
+    # validated citations before comparing numeric values and preserve signs.
+    nums_in_response = extract_numbers_from_text(UUID_RE.sub("", response_text))
+    nums_in_facts = {_numeric_value(n) for n in numbers_in_facts_payload(facts_payload)}
     for n in list(nums_in_response):
-        if n in nums_in_facts:
-            continue
-        if n.rstrip("%") in nums_in_facts:
+        if _numeric_value(n) is not None and _numeric_value(n) in nums_in_facts:
             continue
         if reject_on_unknown_numbers:
             return False, [], f"LLM response contains number '{n}' not present in facts payload"
@@ -97,10 +111,6 @@ def validate_llm_response(
     causal_ok, causal_err = validate_causal_claims_require_evidence(response_text, allowed_evidence_ids)
     if not causal_ok and causal_err:
         return False, [], causal_err
-    # Citations subset of allowed
-    cited = set(UUID_RE.findall(response_text))
-    if cited and not cited.issubset(allowed_evidence_ids):
-        disclaimers.append("Some citations may reference IDs not in allowed evidence set")
     return True, disclaimers, None
 
 

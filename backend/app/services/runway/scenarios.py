@@ -10,8 +10,16 @@ def apply_scenario_params(
 ) -> tuple[dict, dict]:
     if not params:
         return base_weekly_outflows, base_weekly_inflows
-    out_mult = params.get("outflows_multiplier") or 1.0
-    in_mult = params.get("inflows_multiplier") or 1.0
-    new_out = {k: v * Decimal(str(out_mult)) for k, v in base_weekly_outflows.items()}
-    new_in = {k: v * Decimal(str(in_mult)) for k, v in base_weekly_inflows.items()}
+    allowed = {"outflows_multiplier", "inflows_multiplier"}
+    if set(params) - allowed:
+        raise ValueError("Supported scenario parameters: inflows_multiplier, outflows_multiplier")
+    try:
+        out_mult = Decimal(str(params.get("outflows_multiplier", 1)))
+        in_mult = Decimal(str(params.get("inflows_multiplier", 1)))
+    except (ValueError, ArithmeticError) as exc:
+        raise ValueError("Scenario multipliers must be finite numbers between 0 and 10") from exc
+    if any(not value.is_finite() or not 0 <= value <= 10 for value in (out_mult, in_mult)):
+        raise ValueError("Scenario multipliers must be finite numbers between 0 and 10")
+    new_out = {k: (v * out_mult).quantize(Decimal("0.0001")) for k, v in base_weekly_outflows.items()}
+    new_in = {k: (v * in_mult).quantize(Decimal("0.0001")) for k, v in base_weekly_inflows.items()}
     return new_out, new_in

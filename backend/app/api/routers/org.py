@@ -16,7 +16,7 @@ from app.api.schemas import (
     OrgDTO,
 )
 from app.config import get_settings
-from app.deps import CurrentOrg, CurrentUser, DbSession, requires_role
+from app.deps import CurrentOrg, CurrentUser, DbSession, WritableOrg, requires_role
 from app.models import commitment, invoice, runway, transaction
 from app.models.audit import AuditLog
 from app.models.base import gen_uuid
@@ -46,10 +46,10 @@ async def get_org(org: CurrentOrg):
     return OrgDTO.model_validate(org)
 
 
-@router.delete("/data", status_code=204)
+@router.delete("/data", status_code=204, dependencies=[requires_role("owner")])
 async def delete_org_data(
     body: OrgDataDeleteRequest,
-    org: CurrentOrg,
+    org: WritableOrg,
     user: CurrentUser,
     session: DbSession,
 ):
@@ -89,7 +89,7 @@ async def delete_org_data(
 @router.post("/invitations", response_model=InvitationDTO)
 async def create_invitation(
     body: InvitationCreate,
-    org: CurrentOrg,
+    org: WritableOrg,
     user: CurrentUser,
     session: DbSession,
     _membership: Membership = requires_role("owner", "admin"),
@@ -144,7 +144,7 @@ async def list_invitations(
 @router.delete("/invitations/{invitation_id}", status_code=204)
 async def revoke_invitation(
     invitation_id: str,
-    org: CurrentOrg,
+    org: WritableOrg,
     user: CurrentUser,
     session: DbSession,
     _membership: Membership = requires_role("owner", "admin"),
@@ -201,7 +201,7 @@ async def list_members(
 async def patch_member_role(
     membership_id: str,
     body: MembershipPatch,
-    org: CurrentOrg,
+    org: WritableOrg,
     user: CurrentUser,
     session: DbSession,
     _membership: Membership = requires_role("owner", "admin"),
@@ -211,6 +211,13 @@ async def patch_member_role(
     )).scalar_one_or_none()
     if target is None:
         raise HTTPException(status_code=404, detail={"code": "not_found"})
+
+    if _membership.role != "owner" and (target.role == "owner" or body.role == "owner"):
+        raise HTTPException(403, "Only owners can change ownership")
+
+    # Lock the org so concurrent ownership changes cannot both remove the last owner.
+    from app.models.org import Org
+    await session.execute(select(Org).where(Org.id == org.id).with_for_update())
 
     # last-owner invariant: cannot demote the last owner.
     if target.role == "owner" and body.role != "owner":
@@ -250,7 +257,7 @@ async def patch_member_role(
 @router.delete("/members/{membership_id}", status_code=204)
 async def remove_member(
     membership_id: str,
-    org: CurrentOrg,
+    org: WritableOrg,
     user: CurrentUser,
     session: DbSession,
     _membership: Membership = requires_role("owner", "admin"),
@@ -260,6 +267,12 @@ async def remove_member(
     )).scalar_one_or_none()
     if target is None:
         raise HTTPException(status_code=404, detail={"code": "not_found"})
+
+    if target.role == "owner" and _membership.role != "owner":
+        raise HTTPException(403, "Only owners can remove owners")
+
+    from app.models.org import Org
+    await session.execute(select(Org).where(Org.id == org.id).with_for_update())
 
     if target.role == "owner":
         owners = (await session.execute(

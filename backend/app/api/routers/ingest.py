@@ -5,7 +5,7 @@ import base64
 import logging
 
 from celery.result import AsyncResult
-from fastapi import APIRouter, UploadFile
+from fastapi import APIRouter, HTTPException, UploadFile
 from sqlalchemy import select
 
 from app.api.schemas import (
@@ -14,7 +14,8 @@ from app.api.schemas import (
     QuestionnairePayload,
     QuestionnaireSummary,
 )
-from app.deps import CurrentOrg, CurrentUser, CurrentUserOptional, DbSession
+from app.deps import CurrentOrg, CurrentUser, CurrentUserOptional, DbSession, WritableOrg
+from app.models.audit import AuditLog
 from app.services.events import EventType, publish_event_best_effort
 from app.tasks.celery_app import celery_app
 from app.tasks.jobs import import_invoices_csv, import_transactions_csv
@@ -34,11 +35,13 @@ def _safe_publish(org_id: str, event_type: EventType, payload: dict) -> None:
 @router.post("/transactions/csv", response_model=IngestJobResponse)
 async def ingest_transactions_csv(
     file: UploadFile,
-    org: CurrentOrg,
+    org: WritableOrg,
     session: DbSession,
     user: CurrentUserOptional = None,
 ):
-    content = await file.read()
+    content = await file.read(10 * 1024 * 1024 + 1)
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(413, "CSV uploads are limited to 10 MiB")
     b64 = base64.b64encode(content).decode()
     task = import_transactions_csv.delay(org.id, b64)
     await record_audit(
@@ -59,7 +62,15 @@ async def ingest_transactions_csv(
 
 
 @router.get("/jobs/{job_id}", response_model=IngestJobStatusDTO)
-async def get_ingest_job(job_id: str):
+async def get_ingest_job(job_id: str, org: CurrentOrg, session: DbSession):
+    job = await session.scalar(
+        select(AuditLog.id).where(
+            AuditLog.org_id == org.id, AuditLog.entity_id == job_id,
+            AuditLog.action.in_(["ingest.transactions_csv_enqueued", "ingest.invoices_csv_enqueued"]),
+        ).limit(1)
+    )
+    if job is None:
+        raise HTTPException(404, "Import job not found")
     r = AsyncResult(job_id, app=celery_app)
     status = r.state
     errors = []
@@ -86,11 +97,13 @@ async def get_ingest_job(job_id: str):
 @router.post("/invoices/csv", response_model=IngestJobResponse)
 async def ingest_invoices_csv(
     file: UploadFile,
-    org: CurrentOrg,
+    org: WritableOrg,
     session: DbSession,
     user: CurrentUserOptional = None,
 ):
-    content = await file.read()
+    content = await file.read(10 * 1024 * 1024 + 1)
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(413, "CSV uploads are limited to 10 MiB")
     b64 = base64.b64encode(content).decode()
     task = import_invoices_csv.delay(org.id, b64)
     await record_audit(
@@ -113,7 +126,7 @@ async def ingest_invoices_csv(
 @router.post("/questionnaire", response_model=QuestionnaireSummary)
 async def ingest_questionnaire(
     body: QuestionnairePayload,
-    org: CurrentOrg,
+    org: WritableOrg,
     user: CurrentUser,
     session: DbSession,
 ):
@@ -154,7 +167,7 @@ async def ingest_questionnaire(
 
 @router.post("/sample-seed", response_model=dict)
 async def ingest_sample_seed(
-    org: CurrentOrg, user: CurrentUser, session: DbSession
+    org: WritableOrg, user: CurrentUser, session: DbSession
 ):
     """Seed synthetic dataset for dev/demo. Calls script logic or inline seed."""
     from app.scripts.seed_dev_data import seed_org

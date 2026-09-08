@@ -1,6 +1,5 @@
 """Deterministic spending metrics from transactions. All numeric computations reproducible from stored data."""
-from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from app.utils.dates import week_start
@@ -9,12 +8,12 @@ from app.utils.money import round_currency, safe_divide
 
 def total_outflow(amounts: list[Decimal]) -> Decimal:
     """Sum of max(0, -amount) for outflow."""
-    return sum(max(Decimal("0"), -a) for a in amounts)
+    return sum((max(Decimal("0"), -a) for a in amounts), Decimal("0"))
 
 
 def total_inflow(amounts: list[Decimal]) -> Decimal:
     """Sum of max(0, amount) for inflow."""
-    return sum(max(Decimal("0"), a) for a in amounts)
+    return sum((max(Decimal("0"), a) for a in amounts), Decimal("0"))
 
 
 def net_burn(outflow: Decimal, inflow: Decimal) -> Decimal:
@@ -88,10 +87,16 @@ def compute_weekly_outflows_by_week(
     num_weeks: int = 9,
 ) -> dict[date, Decimal]:
     """Bucket outflow (max(0,-amount)) by week_start. Returns dict week_start -> total outflow."""
-    outflows_by_week: dict[date, Decimal] = defaultdict(Decimal)
+    if num_weeks <= 0:
+        return {}
+    last_week = week_start(reference_end)
+    outflows_by_week = {
+        last_week - timedelta(weeks=i): Decimal("0") for i in range(num_weeks)
+    }
     for d, amt in txn_dates_and_amounts:
         ws = week_start(d)
-        outflows_by_week[ws] += max(Decimal("0"), -amt)
+        if d <= reference_end and ws in outflows_by_week:
+            outflows_by_week[ws] += max(Decimal("0"), -amt)
     return dict(outflows_by_week)
 
 
@@ -106,7 +111,10 @@ def reconcile_weekly_to_period(
     return mismatch, sum_weekly
 
 
-def vendor_anomaly_mad(weekly_spend_by_merchant: dict[str, list[Decimal]]) -> dict[str, bool]:
-    """Simple MAD-based anomaly: True if merchant's last week is outlier. Placeholder returns {}."""
-    # MVP: could compute median and MAD per merchant, flag if last > median + k*MAD
-    return {}
+def monthly_commitment_amount(amount: Decimal, frequency: str) -> Decimal:
+    """Convert a recurring charge to a monthly planning equivalent."""
+    factors = {"weekly": Decimal(52) / Decimal(12), "monthly": Decimal(1),
+               "annual": Decimal(1) / Decimal(12)}
+    if frequency not in factors:
+        raise ValueError(f"Unsupported commitment frequency: {frequency}")
+    return amount * factors[frequency]

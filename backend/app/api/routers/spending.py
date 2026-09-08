@@ -22,9 +22,10 @@ from app.api.schemas import (
     TransactionCategoryPatch,
     TransactionDTO,
 )
-from app.deps import CurrentOrg, CurrentUser, DbSession
+from app.deps import CurrentOrg, CurrentUser, DbSession, ReportingOrg, WritableOrg
 from app.models import commitment as comm_models
 from app.models import transaction as txn_models
+from app.models.financial_profile import FinancialProfile
 from app.services.events import EventType, publish_event_best_effort
 from app.services.spending.alerts import spend_creep_alerts
 from app.services.spending.metrics import (
@@ -32,6 +33,7 @@ from app.services.spending.metrics import (
     cash_weeks,
     compute_baseline_weekly_outflow,
     compute_weekly_outflows_by_week,
+    monthly_commitment_amount,
     net_burn,
     reconcile_weekly_to_period,
     revenue_breakeven_gap,
@@ -58,7 +60,7 @@ def _safe_publish(org_id: str, event_type: EventType, payload: dict) -> None:
 
 
 @router.get("/metrics", response_model=SpendingMetricsDTO)
-async def get_spending_metrics(org: CurrentOrg, session: DbSession):
+async def get_spending_metrics(org: ReportingOrg, session: DbSession):
     today = date.today()
     end_30 = period_30d_end(today)
     end_90 = period_90d_end(today)
@@ -66,6 +68,7 @@ async def get_spending_metrics(org: CurrentOrg, session: DbSession):
         select(txn_models.Transaction.txn_date, txn_models.Transaction.amount, txn_models.Transaction.currency).where(
             txn_models.Transaction.org_id == org.id,
             txn_models.Transaction.txn_date >= end_90,
+            txn_models.Transaction.txn_date <= today,
         )
     )
     rows = result.all()
@@ -79,22 +82,24 @@ async def get_spending_metrics(org: CurrentOrg, session: DbSession):
     nb_90 = net_burn(out_90, in_90)
     rr_out = run_rate_outflow(out_90, 90)
     rr_nb = run_rate_net_burn(nb_90, 90)
-    by_week = compute_weekly_outflows_by_week([(r[0], r[1]) for r in rows], today, 9)
-    week_list = sorted(by_week.values(), reverse=True)
-    baseline = compute_baseline_weekly_outflow(week_list, 1) if week_list else Decimal("0")
-    current_week = week_list[0] if week_list else Decimal("0")
+    by_week = compute_weekly_outflows_by_week([(r[0], r[1]) for r in rows], today, 14)
+    week_list = [by_week[week] for week in sorted(by_week)]
+    baseline = compute_baseline_weekly_outflow(week_list[-9:], 1) if week_list else Decimal("0")
+    current_week = week_list[-1] if week_list else Decimal("0")
     creep = spend_creep_pct(baseline, current_week) if baseline else None
-    cash_bal = Decimal("0")  # TODO from questionnaire or bank
+    profile = await session.scalar(select(FinancialProfile).where(FinancialProfile.org_id == org.id))
+    cash_bal = profile.cash_balance if profile else None
     weekly_nb = (nb_90 * Decimal("7")) / Decimal("90") if nb_90 else Decimal("0")
-    cw, cw_flag = cash_weeks(cash_bal, weekly_nb)
+    cw, cw_flag = cash_weeks(cash_bal, weekly_nb) if cash_bal is not None else (None, "na")
     commitments_result = await session.execute(
-        select(func.sum(comm_models.Commitment.typical_amount)).where(
+        select(comm_models.Commitment.typical_amount, comm_models.Commitment.frequency).where(
             comm_models.Commitment.org_id == org.id,
             comm_models.Commitment.enabled == True,
         )
     )
-    monthly_fixed = (commitments_result.scalar() or Decimal("0")) * Decimal("12/52")  # rough monthly
-    buf = buffer_ratio(cash_bal, monthly_fixed) if monthly_fixed else None
+    monthly_fixed = sum((monthly_commitment_amount(amount, frequency)
+                         for amount, frequency in commitments_result.all()), Decimal("0"))
+    buf = buffer_ratio(cash_bal, monthly_fixed) if monthly_fixed and cash_bal is not None else None
     gap = revenue_breakeven_gap(rr_nb)
     currencies = set(r[2] for r in rows)
     multi_currency = len(currencies) > 1
@@ -164,7 +169,7 @@ async def get_transaction(txn_id: str, org: CurrentOrg, session: DbSession):
 async def patch_transaction(
     txn_id: str,
     body: TransactionCategoryPatch,
-    org: CurrentOrg,
+    org: WritableOrg,
     user: CurrentUser,
     session: DbSession,
 ):
@@ -218,7 +223,7 @@ async def list_rules(org: CurrentOrg, session: DbSession):
 @router.post("/rules", response_model=CategorizationRuleDTO)
 async def create_rule(
     body: CategorizationRuleCreate,
-    org: CurrentOrg,
+    org: WritableOrg,
     user: CurrentUser,
     session: DbSession,
 ):
@@ -255,7 +260,7 @@ async def create_rule(
 async def patch_rule(
     rule_id: str,
     body: CategorizationRulePatch,
-    org: CurrentOrg,
+    org: WritableOrg,
     user: CurrentUser,
     session: DbSession,
 ):
@@ -296,7 +301,7 @@ async def patch_rule(
 
 @router.delete("/rules/{rule_id}", status_code=204)
 async def delete_rule(
-    rule_id: str, org: CurrentOrg, user: CurrentUser, session: DbSession
+    rule_id: str, org: WritableOrg, user: CurrentUser, session: DbSession
 ):
     result = await session.execute(
         select(txn_models.CategorizationRule).where(
@@ -336,7 +341,7 @@ async def list_commitments(org: CurrentOrg, session: DbSession):
 async def patch_commitment(
     commitment_id: str,
     body: CommitmentPatch,
-    org: CurrentOrg,
+    org: WritableOrg,
     user: CurrentUser,
     session: DbSession,
 ):
@@ -368,7 +373,7 @@ async def patch_commitment(
 
 
 @router.get("/alerts", response_model=list[AlertDTO])
-async def list_alerts(org: CurrentOrg, session: DbSession):
+async def list_alerts(org: ReportingOrg, session: DbSession):
     from sqlalchemy import func
 
     from app.models import invoice as inv_models
@@ -385,13 +390,14 @@ async def list_alerts(org: CurrentOrg, session: DbSession):
         select(txn_models.Transaction.txn_date, txn_models.Transaction.amount).where(
             txn_models.Transaction.org_id == org.id,
             txn_models.Transaction.txn_date >= end_90,
+            txn_models.Transaction.txn_date <= today,
         )
     )
     rows = result.all()
-    by_week = compute_weekly_outflows_by_week([(r[0], r[1]) for r in rows], today, 9)
-    week_list = sorted(by_week.values(), reverse=True)
-    baseline = compute_baseline_weekly_outflow(week_list, 1) if week_list else Decimal("0")
-    current_week = week_list[0] if week_list else Decimal("0")
+    by_week = compute_weekly_outflows_by_week([(r[0], r[1]) for r in rows], today, 14)
+    week_list = [by_week[week] for week in sorted(by_week)]
+    baseline = compute_baseline_weekly_outflow(week_list[-9:], 1) if week_list else Decimal("0")
+    current_week = week_list[-1] if week_list else Decimal("0")
     creep = spend_creep_pct(baseline, current_week) if baseline else None
     alerts = spend_creep_alerts(creep, 0.25, [])
 

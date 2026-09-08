@@ -8,7 +8,7 @@ from app.api.schemas import (
     LLMExplainResponse,
 )
 from app.config import get_settings
-from app.deps import CurrentOrg, DbSession
+from app.deps import DbSession, WritableOrg
 from app.models.llm import LLMExplanation
 from app.services.llm.explain import call_llm_explain
 from app.services.llm.facts_payload import build_facts_payload
@@ -20,7 +20,7 @@ router = APIRouter()
 @router.post("/explain", response_model=LLMExplainResponse)
 async def post_llm_explain(
     body: LLMExplainRequest,
-    org: CurrentOrg,
+    org: WritableOrg,
     session: DbSession,
 ):
     # Build facts payload deterministically from context_modules
@@ -74,7 +74,7 @@ async def post_llm_explain(
 @router.post("/draft-collection-message", response_model=LLMDraftMessageResponse)
 async def draft_collection_message(
     body: LLMDraftMessageRequest,
-    org: CurrentOrg,
+    org: WritableOrg,
     session: DbSession,
 ):
     from sqlalchemy import select

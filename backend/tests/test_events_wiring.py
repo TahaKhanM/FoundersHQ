@@ -214,6 +214,15 @@ async def test_invoice_touch_publishes(client, async_session):
 @pytest.mark.asyncio
 async def test_runway_forecast_compute_publishes(client, async_session):
     token, org_id = _register_owner(client)
+    from datetime import date, timedelta
+
+    from app.models.financial_profile import FinancialProfile
+    from app.models.transaction import Transaction
+    from app.utils.dates import week_start
+    async_session.add(FinancialProfile(org_id=org_id, cash_balance=Decimal("1000"), currency="USD"))
+    async_session.add(Transaction(org_id=org_id, txn_date=week_start(date.today()) - timedelta(days=1),
+                                  amount=Decimal("-800"), currency="USD", source="csv"))
+    await async_session.commit()
     drain_events()
 
     r = client.post(

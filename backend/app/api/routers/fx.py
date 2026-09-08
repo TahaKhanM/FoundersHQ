@@ -16,7 +16,7 @@ from fastapi import APIRouter, Query
 from sqlalchemy import select
 
 from app.api.schemas import FxRateBulkIngestRequest, FxRateDTO, FxRateUpsertResult
-from app.deps import CurrentOrg, CurrentUser, DbSession, requires_role
+from app.deps import CurrentOrg, CurrentUser, DbSession, WritableOrg, requires_role
 from app.models.fx_rate import FxRate
 from app.models.org import Membership
 from app.services.events import EventType, publish_event_best_effort
@@ -68,7 +68,7 @@ async def list_fx_rates(
 @router.post("/rates", response_model=FxRateUpsertResult)
 async def bulk_upsert_fx_rates(
     body: FxRateBulkIngestRequest,
-    org: CurrentOrg,
+    org: WritableOrg,
     user: CurrentUser,
     session: DbSession,
     _membership: Membership = requires_role("owner", "admin"),
