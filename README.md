@@ -1,144 +1,225 @@
 # FoundersHQ
 
-A financial operating system for early-stage startups. It imports transaction and invoice data, computes spend, burn, runway and funding signals and uses an LLM only to explain those numbers with cited evidence rather than to invent them.
+FoundersHQ is a financial-planning prototype for early-stage startups. It imports
+transactions and invoices, turns them into spending and collection views, projects
+cash under explicit assumptions and keeps a record of changes. A FastAPI backend
+owns the calculations and authorization; a Next.js frontend provides the dashboard,
+invoice workflow and planning screens.
 
-## Context
+Its strongest technical idea is to keep **financial calculations separate from
+language-model explanations**. Cash projections are reproducible from stored inputs.
+Explanations are checked against a supplied facts payload and allowed record IDs.
+The distinction matters because a persuasive explanation is not evidence that a
+number is correct.
 
-Built for a fintech hackathon run with DE Shaw and Capital One. It placed in the top 5 out of more than 150 participants.
+## What to inspect
 
-The product is designed around one constraint: financial numbers should be deterministic and auditable and AI should cite its evidence instead of generating values. That constraint drove most of the engineering decisions in this repository.
+| Area | Implementation | What it demonstrates |
+| --- | --- | --- |
+| Cash planning | [Forecast route](backend/app/api/routers/runway.py), [history baseline](backend/app/services/runway/history.py), [cash simulation](backend/app/services/runway/forecast.py) | Decimal arithmetic, explicit assumptions, evidence retention and missing-data handling |
+| Organization access | [Dependencies](backend/app/deps.py), [member administration](backend/app/api/routers/org.py) | Tenant scoping, role gates, owner controls and authorization tests |
+| Invoice operations | [Invoice routes](backend/app/api/routers/invoices.py), [services](backend/app/services/invoices) | Payment heuristics, collection priorities and a recorded follow-up workflow |
+| Explanation validation | [LLM guardrails](backend/app/services/llm/guardrails.py) | Numeric/citation consistency checks around an optional external model |
+| User interface | [Frontend](frontend), [API layer](frontend/lib/api) | Typed API models, SWR data fetching, reusable finance components and a standalone mock mode |
+| Verification | [Backend tests](backend/tests), [CI](.github/workflows) | Deterministic service tests and actual authenticated API boundary tests |
 
-## The three invariants
+The application also includes onboarding, spending categories and recurring
+commitments, funding-route heuristics, evidence-linked insights, notifications,
+search, audit export and an FX-rate table. The
+[design documents](docs/ARCHITECTURE.md) describe a wider intended product; they are
+not a list of completed integrations.
 
-These are product rules enforced in code, not aspirations. They shaped the architecture.
+## How data moves through the application
 
-1. **Determinism.** Every number on screen re-derives from stored rows. Financial math uses Python `Decimal` server-side and a `<Money>` component client-side. There are no LLM-generated numbers.
-2. **Evidence.** Any causal claim returns a list of `evidence_ids` that point to specific transaction or invoice records. The frontend resolves them into clickable chips that open the underlying record.
-3. **Audit.** Every mutation writes an audit-log row through a single `record_audit` helper. Every LLM call writes a row that stores a hash of the facts the model was given.
-
-If a feature could not satisfy these, it was redesigned.
-
-## What is implemented
-
-Backend and frontend for the following product surfaces:
-
-- **Spending Health.** Recurring-commitment detection, vendor analysis, net burn, run rate and spend-creep signals.
-- **Invoice Control.** Invoice tracking, customer behaviour, an action queue and follow-up (touch) logging.
-- **Runway Radar.** Weekly cash forecasts with base and pessimistic scenarios, plus attribution back to the transactions and invoices that drive each week.
-- **Funding Fit.** Route ranking, opportunity storage and improvement recommendations.
-- **Insight Stream.** Deterministic generators (cash drop, late invoice, vendor spike, commitment renewal, runway change) that produce evidence-linked insights, deduplicated by a hash of their evidence set.
-- **Notifications and Inbox.** A notification bell with unread counts, a snooze flow and per-type preferences.
-- **Onboarding.** A multi-step wizard with a deterministic seed path.
-- **Auth, RBAC and team management.** Registration, login, password reset, magic-link invitations and role changes.
-- **Audit log.** A filterable audit view with streaming CSV export.
-- **Global search.** Cross-entity lookup wired to a Cmd-K command palette.
-- **Multi-currency.** An FX-rate table, a base-currency context and dual-render money components.
-
-## Architecture
-
-The system separates a deterministic core from an LLM periphery.
-
-- **Deterministic core.** Every file under `app/services/<domain>/` is pure Python with typed inputs and outputs. Routers stay thin: they fetch rows, call a service, serialise the result, write an audit entry and publish an event. This keeps metrics fast to test and reproducible.
-- **LLM periphery.** The LLM lives only under `app/services/llm/` and its routes. Every call passes through `validate_llm_response`, which rejects any number that is not present in the facts payload and any causal claim without a record citation.
-- **Multi-tenancy.** A `CurrentOrg` dependency is injected into every route and a SQLAlchemy event listener asserts that org-scoped inserts carry an `org_id`. The backend is the security boundary. Frontend role checks are for UX only.
-- **Real-time.** Mutations publish events to a durable outbox table and to Redis pub/sub. A server-sent-events endpoint streams them per org and the client reconnects with catch-up from the outbox.
-
-### How the invariants show up in the code
-
-- Financial math uses `Decimal` across the service layer instead of floats, so results are exact and reproducible.
-- Service functions that surface a derived insight return `evidence_ids` alongside the values and the router passes them through to the response schema.
-- Mutations route through `record_audit` and LLM calls persist a `facts_hash` so it is possible to prove exactly what the model saw.
-- Roles are `owner`, `admin`, `member` and `viewer`, gated by a `requires_role` dependency on mutation routes.
-
-## Tech stack
-
-**Backend:** FastAPI, SQLAlchemy 2 (async), Alembic, Pydantic v2, Celery with Redis, python-jose for JWT (HS256) and passlib with bcrypt. The OpenAI SDK is used for explanation and drafting only, validated against server-provided facts.
-
-**Frontend:** Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS v4, shadcn/ui on Radix primitives, SWR for data fetching, Recharts for charts and Zod for validation.
-
-**Infrastructure:** PostgreSQL 15 and Redis 7 via Docker Compose, with three GitHub Actions workflows for the backend, the frontend and dependency security.
-
-## By the numbers
-
-- 18 SQLAlchemy models, 15 service domains, 18 API routers and 10 Alembic migrations.
-- 117 backend tests across 37 test modules.
-- 26 frontend routes and 99 React components across 13 domains.
-- Roughly 10.5k lines of backend application code and 20.6k lines of frontend code.
-
-## Repository structure
-
-```text
-.
-├── backend/    FastAPI app: models, services, routers, tasks and tests
-├── frontend/   Next.js app: routes, components, typed API layer and hooks
-├── docs/       Architecture, design system, product spec and security notes
-├── docker-compose.yml   Local Postgres and Redis
-└── README.md
+```mermaid
+flowchart LR
+    F[Next.js UI] -->|Bearer token| A[FastAPI and organization dependencies]
+    C[CSV imports] --> W[Celery worker]
+    A --> D[(PostgreSQL)]
+    W --> D
+    D --> S[Deterministic financial services]
+    S --> A
+    A --> L[Optional explanation service]
+    L --> V[Number and citation checks]
+    V --> F
+    A --> U[Audit records and notifications]
 ```
 
-The frontend API layer is hand-written: typed DTOs, mappers from API shapes to view models, SWR query hooks and a mock-data mode so the UI runs without a backend.
+Routers load organization-scoped records and call domain services. SQLAlchemy and
+Alembic provide the schema and migration history. Financial amounts use `Decimal`
+and fixed-precision database columns. The frontend consumes serialized decimal
+strings rather than being the authority for financial calculations.
 
-## Running locally
+The service layer is intentionally mixed: arithmetic helpers are pure, while
+retrieval, FX lookup, audit and event publishing involve I/O. Most API tests run
+against SQLite with compatibility adapters; PostgreSQL integration tests and
+migrations run separately. That makes local feedback fast, but only the latter can
+validate database-specific locking and schema behavior.
 
-Prerequisites: Docker, Python 3.11+, Node 18+ and pnpm.
+## Forecast methodology
 
-Start infrastructure:
+The forecast is a transparent planning baseline, not a trained prediction model:
 
-```bash
+1. Read the organization's recorded cash balance and its currency from the financial
+   profile. A missing balance or mismatched currency stops the request.
+2. Use the **previous eight complete calendar weeks** of transactions. Positive
+   amounts are receipts and negative amounts are payments. Include zero-activity
+   weeks in the denominator; exclude the current partial week and future records.
+3. Repeat the mean weekly receipts and payments over the requested horizon. Apply
+   optional receipt/payment multipliers, including zero.
+4. Roll cash forward with `ending = starting + receipts - payments`. The first week
+   ending below zero is the reported crash week, indexed from zero.
+5. Compute a disclosed stress case with receipts reduced by 20% and payments
+   increased by 20%. This is a sensitivity scenario, not a confidence interval.
+
+Each stored forecast retains the input record IDs, cash-profile update time,
+lookback, calculation date and method version. For example, $220 starting cash and
+$800 of payments across eight complete weeks imply $100 weekly payments: the base
+case first becomes negative in week index 2 and the stress case in week index 1.
+
+This baseline avoids fitting a complex model to sparse startup data. Its cost is
+that one-off costs, seasonality, future hiring and payment delays are not modeled
+unless represented through explicit scenario assumptions. Imported invoice amounts
+are **not added to historical transaction receipts**, avoiding obvious double
+counting. Invoice payment heuristics are a separate workflow. Saved scenario
+application and detailed causal attribution are unfinished; unsupported application
+returns an explicit error.
+
+The current reports and forecasts require one organization base currency. FX rates
+and conversion helpers exist, but historical target-currency provenance is not yet
+wired consistently through every aggregate. Mixed currencies therefore produce a
+validation error instead of a misleading sum.
+
+## Authorization and reliability
+
+Shared financial mutations require a member, admin or owner; viewers can read.
+Role checks use the same organization resolved for the request. Purging organization
+data is owner-only and an admin cannot promote themselves to owner or change an
+owner's membership. Ownership changes serialize on the organization row in
+PostgreSQL. The MVP selects a user's first membership as their default organization;
+there is no full organization-switching workflow.
+
+Password-reset and invitation secrets are hashed at rest. Consuming a token uses a
+conditional `UPDATE ... RETURNING`, so checking validity and marking it consumed
+happen in one database operation. Import-job results require a matching,
+organization-scoped enqueue audit record. CSV uploads are limited to 10 MiB.
+
+Production configuration rejects the default/short JWT signing secret and debug
+mode. This is still a prototype: reset/invitation email delivery is unfinished,
+logout does not revoke previously issued JWTs and public authentication endpoints
+need abuse controls before internet deployment. Development responses can expose
+reset/invitation tokens for local testing; never run a public instance with
+`ENV=dev`.
+
+The LLM guardrail rejects unknown numeric values and record citations, excludes
+UUID digits from financial checks and requires a citation when it detects causal
+phrasing. It does **not** establish that a cited record supports a sentence, catch
+all paraphrased causal claims or prevent a correct number from being used in the
+wrong context. A stored facts hash aids comparison; it does not prove semantic
+correctness.
+
+Audit rows and deterministic event types are implemented. The durable outbox exists,
+but many mutation routes still use an in-process best-effort event queue. End-to-end
+transactional delivery and recovery across multiple workers remain incomplete.
+
+## Run locally
+
+Use Python 3.11+, Node.js 24+, pnpm 10.30.3 and Docker for PostgreSQL/Redis.
+
+For the complete local backend stack:
+
+```sh
+docker compose up --build -d
+# API migrations run before the server starts.
+# Open http://localhost:8000/docs
+```
+
+For backend development on the host:
+
+```sh
 docker compose up -d db redis
-```
-
-Backend:
-
-```bash
 cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt -e '.[dev]'
 cp .env.example .env
-pip install -e ".[dev]"
 alembic upgrade head
 uvicorn app.main:app --reload
 ```
 
-The API and its OpenAPI docs are at `http://localhost:8000/docs`. To seed sample data run `python -m app.scripts.seed_dev_data` and to run background jobs start a worker with `celery -A app.tasks.celery_app worker --loglevel=info`.
+The committed requirements pin the resolved runtime dependencies. Regenerate them
+with `uv pip compile --python-version 3.11 pyproject.toml -o requirements.txt` from
+`backend` after a deliberate dependency change.
 
-Frontend:
+Register an account through the UI or API before importing data. To create the
+synthetic developer dataset:
 
-```bash
+```sh
+cd backend
+source .venv/bin/activate
+python -m app.scripts.seed_dev_data
+# Optional host worker for CSV imports:
+celery -A app.tasks.celery_app worker --loglevel=info
+```
+
+The seed command can create a developer account with printed local credentials.
+Use it only in a disposable development database.
+
+Start the frontend in a separate terminal:
+
+```sh
 cd frontend
 cp .env.example .env.local
-pnpm install
+pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-The app runs at `http://localhost:3000`. It defaults to mock mode. To hit the real backend, set:
+Open `http://localhost:3000`. Mock mode is enabled by default so the interface can be
+explored without services. Set `NEXT_PUBLIC_MOCK_API=false` and
+`NEXT_PUBLIC_API_BASE_URL=http://localhost:8000` to use the real API. Mock-screen
+numbers are demonstration data, not measured project results.
 
-```text
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
-NEXT_PUBLIC_MOCK_API=false
+For a real forecast, first submit a cash profile to `POST /ingest/questionnaire`,
+import transaction history and call `POST /runway/forecast/compute` with, for example:
+
+```json
+{
+  "horizon_weeks": 26,
+  "scenario_params": { "outflows_multiplier": 1.1, "inflows_multiplier": 0.9 }
+}
 ```
 
-## Verification
+Use the bearer token returned by `/auth/register` or `/auth/login` in the OpenAPI
+Authorize dialog. Validation errors explain which input is missing.
 
-Backend (ruff, mypy and pytest):
+## Verify
 
-```bash
+```sh
 cd backend
-make verify
-```
-
-Frontend (tsc and eslint):
-
-```bash
-cd frontend
-pnpm verify
+make verify                 # ruff, configured mypy checks, non-infrastructure tests
+make test-integration       # needs PostgreSQL and Redis
+cd ../frontend
+pnpm verify                 # TypeScript and ESLint
 pnpm build
+pnpm audit --prod
 ```
 
-## Design docs
+Regression tests cover malformed credentials, role escalation, read/write tenant
+boundaries, token reuse, exact financial examples, future-data exclusion,
+zero-valued scenarios and persisted forecast reads. Mypy currently exempts several
+legacy modules; passing it is not a claim of strict typing across the whole backend.
+The dependency audit workflow fails on findings instead of suppressing its exit code.
 
-`docs/` holds the design documents written for the project: architecture, the design system, the product specification and the security model. They describe the full intended product, which is larger than what is implemented here. Each starts with a note marking that distinction.
+## Project history and remaining scope
 
-## Scope and limitations
+FoundersHQ began as a fintech hackathon project associated with D. E. Shaw and
+Capital One. The original project write-up records a top-five finish among more
+than 150 participants. The repository includes later backend and frontend work;
+current capabilities should not be attributed wholesale to the original submission
+or treated as a complete record of individual team contributions.
 
-- This is a hackathon and MVP codebase, not a production financial system.
-- The forecasts are planning tools, not accounting advice.
-- Several integrations described in the design docs, including bank sync, accounting sync and receipt OCR, are specified but not built.
+The September 2026 review repaired authorization gaps, placeholder forecasting,
+spending chronology and setup/package defects and added representative API tests.
+It did not turn the prototype into an accounting system. Bank/accounting sync,
+receipt OCR, reliable email delivery, production session controls, complete
+multi-currency reporting and an evaluated forecasting model remain future work.

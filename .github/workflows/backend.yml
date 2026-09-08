@@ -42,7 +42,7 @@ jobs:
       REDIS_URL: redis://localhost:6379/0
       CELERY_BROKER_URL: redis://localhost:6379/1
       CELERY_RESULT_BACKEND: redis://localhost:6379/2
-      SECRET_KEY: ci-secret
+      SECRET_KEY: ci-test-only-not-a-production-secret-12345
       OPENAI_API_KEY: ""
 
     steps:
@@ -55,7 +55,7 @@ jobs:
 
       - name: Install
         run: |
-          pip install -e ".[dev]"
+          pip install -r requirements.txt -e ".[dev]"
 
       - name: Migrate
         run: alembic upgrade head

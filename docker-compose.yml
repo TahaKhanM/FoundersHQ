@@ -1,27 +1,25 @@
+# Local development only. Change credentials and provision secrets before deployment.
+x-backend-env: &backend-env
+  ENV: dev
+  DATABASE_URL: postgresql+asyncpg://foundershq:foundershq@db:5432/foundershq
+  DATABASE_URL_SYNC: postgresql://foundershq:foundershq@db:5432/foundershq
+  REDIS_URL: redis://redis:6379/0
+  CELERY_BROKER_URL: redis://redis:6379/1
+  CELERY_RESULT_BACKEND: redis://redis:6379/2
+  SECRET_KEY: local-development-only-change-before-deployment
+
 services:
   api:
-    build: .
+    build: ./backend
     ports:
-      - "8000:8000"
-    environment:
-      DATABASE_URL: postgresql+asyncpg://foundershq:foundershq@db:5432/foundershq
-      DATABASE_URL_SYNC: postgresql://foundershq:foundershq@db:5432/foundershq
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/1
-      CELERY_RESULT_BACKEND: redis://redis:6379/2
-      SECRET_KEY: dev-secret-change-in-production
+      - "127.0.0.1:8000:8000"
+    environment: *backend-env
+    command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_started
-    volumes:
-      - .:/app
-
-  backend:
-    build: ./backend
-    env_file:
-      - ./backend/.env
 
   db:
     image: postgres:15-alpine
@@ -30,7 +28,7 @@ services:
       POSTGRES_PASSWORD: foundershq
       POSTGRES_DB: foundershq
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -42,21 +40,17 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
 
   worker:
-    build: .
+    build: ./backend
     command: celery -A app.tasks.celery_app worker --loglevel=info
-    environment:
-      DATABASE_URL: postgresql+asyncpg://foundershq:foundershq@db:5432/foundershq
-      DATABASE_URL_SYNC: postgresql://foundershq:foundershq@db:5432/foundershq
-      CELERY_BROKER_URL: redis://redis:6379/1
-      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    environment: *backend-env
     depends_on:
-      - db
-      - redis
-    volumes:
-      - .:/app
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
 volumes:
   pgdata:
