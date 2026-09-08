@@ -213,8 +213,8 @@ The dependency audit workflow fails on findings instead of suppressing its exit 
 ## Project history and remaining scope
 
 FoundersHQ began as a fintech hackathon project associated with D. E. Shaw and
-Capital One. The original project write-up records a top-five finish among more
-than 150 participants. The repository includes later backend and frontend work;
+Capital One. The [original project write-up](https://github.com/TahaKhanM/FoundersHQ/blob/6e74bec8cbcdb28e1403fa309e31538ecd7b6c07/README.md#context)
+records a top-five finish among more than 150 participants. The repository includes later backend and frontend work;
 current capabilities should not be attributed wholesale to the original submission
 or treated as a complete record of individual team contributions.
 
