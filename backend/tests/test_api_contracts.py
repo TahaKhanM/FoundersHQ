@@ -11,19 +11,30 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.models.base import engine
 
 pytestmark = pytest.mark.integration
 
-client = TestClient(app)
+@pytest.fixture(scope="module")
+def api_client():
+    """Keep pooled asyncpg connections on one event loop for this API session."""
+    with TestClient(app) as client:
+        try:
+            yield client
+        finally:
+            assert client.portal is not None
+            client.portal.call(engine.dispose)
 
 
-def test_health():
+def test_health(api_client):
+    client = api_client
     r = client.get("/health")
     assert r.status_code == 200
     assert r.json() == {"status": "ok"}
 
 
-def test_openapi_docs():
+def test_openapi_docs(api_client):
+    client = api_client
     r = client.get("/openapi.json")
     assert r.status_code == 200
     data = r.json()
@@ -31,7 +42,8 @@ def test_openapi_docs():
     assert "paths" in data
 
 
-def test_register_and_login():
+def test_register_and_login(api_client):
+    client = api_client
     email = f"test-{uuid.uuid4().hex[:8]}@example.com"
     r = client.post("/auth/register", json={"email": email, "password": "secret123"})
     assert r.status_code == 200
@@ -45,11 +57,13 @@ def test_register_and_login():
     assert r2.json()["email"] == email
 
 
-def test_org_requires_auth():
+def test_org_requires_auth(api_client):
+    client = api_client
     r = client.get("/org")
     assert r.status_code == 401
 
 
-def test_spending_metrics_requires_auth():
+def test_spending_metrics_requires_auth(api_client):
+    client = api_client
     r = client.get("/spending/metrics")
     assert r.status_code == 401
