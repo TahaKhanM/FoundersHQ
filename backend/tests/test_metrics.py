@@ -108,3 +108,4 @@ def test_commitment_frequency_is_converted_to_monthly_equivalent():
     assert monthly_commitment_amount(Decimal(120), "monthly") == 120
     assert monthly_commitment_amount(Decimal(120), "annual") == 10
     assert monthly_commitment_amount(Decimal(12), "weekly") == 52
+    assert monthly_commitment_amount(Decimal(12), "biweekly") == 26

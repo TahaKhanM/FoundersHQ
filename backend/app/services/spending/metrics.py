@@ -113,7 +113,8 @@ def reconcile_weekly_to_period(
 
 def monthly_commitment_amount(amount: Decimal, frequency: str) -> Decimal:
     """Convert a recurring charge to a monthly planning equivalent."""
-    factors = {"weekly": Decimal(52) / Decimal(12), "monthly": Decimal(1),
+    factors = {"weekly": Decimal(52) / Decimal(12), "biweekly": Decimal(26) / Decimal(12),
+               "monthly": Decimal(1),
                "annual": Decimal(1) / Decimal(12)}
     if frequency not in factors:
         raise ValueError(f"Unsupported commitment frequency: {frequency}")
