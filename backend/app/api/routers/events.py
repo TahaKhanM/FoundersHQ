@@ -29,10 +29,14 @@ async def events_stream(org: CurrentOrg) -> StreamingResponse:
     # The real Redis client has a wider pubsub() signature than our Protocol
     # advertises; cast tells mypy it satisfies the structural contract we
     # actually use (subscribe/unsubscribe/get_message/close).
-    return StreamingResponse(
-        sse_stream(cast(RedisLike, redis), org.id),
-        media_type="text/event-stream",
-    )
+    async def stream():
+        try:
+            async for chunk in sse_stream(cast(RedisLike, redis), org.id):
+                yield chunk
+        finally:
+            await redis.aclose()
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
 
 
 @router.get("/replay")

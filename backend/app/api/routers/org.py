@@ -23,7 +23,7 @@ from app.models.base import gen_uuid
 from app.models.funding import UserSavedOpportunity
 from app.models.invitation import Invitation
 from app.models.llm import LLMExplanation
-from app.models.org import Membership
+from app.models.org import Membership, Org
 from app.models.user import User
 from app.services.auth.tokens import generate_token
 from app.services.events import EventType
@@ -172,6 +172,16 @@ async def revoke_invitation(
 
 # ---- Phase 1.A: members ----
 
+async def _lock_membership_change(session, org_id: str, user_id: str) -> Membership:
+    """Serialize changes and re-read authority after waiting for the org lock."""
+    await session.execute(select(Org.id).where(Org.id == org_id).with_for_update())
+    actor = await session.scalar(select(Membership).where(
+        Membership.org_id == org_id, Membership.user_id == user_id,
+    ).execution_options(populate_existing=True))
+    if actor is None or actor.role not in {"owner", "admin"}:
+        raise HTTPException(403, "Membership administration requires an owner or admin")
+    return actor
+
 @router.get("/members", response_model=list[MembershipDTO])
 async def list_members(
     org: CurrentOrg,
@@ -206,18 +216,16 @@ async def patch_member_role(
     session: DbSession,
     _membership: Membership = requires_role("owner", "admin"),
 ):
+    _membership = await _lock_membership_change(session, org.id, user.id)
     target = (await session.execute(
         select(Membership).where(and_(Membership.id == membership_id, Membership.org_id == org.id))
+        .execution_options(populate_existing=True)
     )).scalar_one_or_none()
     if target is None:
         raise HTTPException(status_code=404, detail={"code": "not_found"})
 
     if _membership.role != "owner" and (target.role == "owner" or body.role == "owner"):
         raise HTTPException(403, "Only owners can change ownership")
-
-    # Lock the org so concurrent ownership changes cannot both remove the last owner.
-    from app.models.org import Org
-    await session.execute(select(Org).where(Org.id == org.id).with_for_update())
 
     # last-owner invariant: cannot demote the last owner.
     if target.role == "owner" and body.role != "owner":
@@ -262,17 +270,16 @@ async def remove_member(
     session: DbSession,
     _membership: Membership = requires_role("owner", "admin"),
 ):
+    _membership = await _lock_membership_change(session, org.id, user.id)
     target = (await session.execute(
         select(Membership).where(and_(Membership.id == membership_id, Membership.org_id == org.id))
+        .execution_options(populate_existing=True)
     )).scalar_one_or_none()
     if target is None:
         raise HTTPException(status_code=404, detail={"code": "not_found"})
 
     if target.role == "owner" and _membership.role != "owner":
         raise HTTPException(403, "Only owners can remove owners")
-
-    from app.models.org import Org
-    await session.execute(select(Org).where(Org.id == org.id).with_for_update())
 
     if target.role == "owner":
         owners = (await session.execute(
