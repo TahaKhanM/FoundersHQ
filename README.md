@@ -1,5 +1,7 @@
 # FoundersHQ
 
+[![backend](https://github.com/TahaKhanM/FoundersHQ/actions/workflows/backend.yml/badge.svg?branch=main)](https://github.com/TahaKhanM/FoundersHQ/actions/workflows/backend.yml) [![frontend](https://github.com/TahaKhanM/FoundersHQ/actions/workflows/frontend.yml/badge.svg?branch=main)](https://github.com/TahaKhanM/FoundersHQ/actions/workflows/frontend.yml) [![security](https://github.com/TahaKhanM/FoundersHQ/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/TahaKhanM/FoundersHQ/actions/workflows/security.yml)
+
 A startup financial-planning application with a FastAPI backend and Next.js dashboard. It turns transactions and invoices into cash-flow forecasts, spending breakdowns and collection priorities. Calculations use Decimal arithmetic and retain the records behind each forecast.
 
 The backend handles organisation access, financial calculations and audit records. The frontend provides onboarding, invoice management and scenario screens, including a mock mode for exploring the interface without running the services.

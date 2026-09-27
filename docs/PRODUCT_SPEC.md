@@ -6,7 +6,7 @@
 
 **The CFO co-pilot that never lies.**
 
-FoundersHQ is the financial operating system for early-stage startups. Every number is reproducible from raw data. Every AI insight cites its sources. Every recommendation comes with the math. We are the opposite of "ChatGPT with a finance prompt" — we are a deterministic engine with an LLM narrator on top.
+FoundersHQ is the financial operating system for early-stage startups. Every number is reproducible from raw data. Every AI insight cites its sources. Every recommendation comes with the math. Financial calculations are deterministic; the optional language-model layer explains their outputs.
 
 ## Why we win
 
